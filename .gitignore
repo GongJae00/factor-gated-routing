@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Local experiment outputs
+outputs/
+results/
+artifacts/
+checkpoints/
+data/
+datasets/
+wandb/
+runs/
+
+# Local paper/manuscript artifacts
+paper/
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+
+# Local OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
