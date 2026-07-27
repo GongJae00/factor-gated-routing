@@ -1,0 +1,31 @@
+[project]
+name = "factor-gated-routing"
+version = "0.1.0"
+description = "Factor-Gated Routing (FGR): An Architectural Primitive for Controllable Diffusion"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.7.0",
+    "numpy>=1.26.0",
+    "h5py>=3.10.0",
+    "Pillow>=10.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[build-system]
+requires = ["uv_build>=0.11.0,<0.12.0"]
+build-backend = "uv_build"

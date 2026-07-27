@@ -1,0 +1,14 @@
+dataset: dsprites
+image_size: 64
+patch_size: 4
+in_channels: 1
+n_factors: 3
+factor_sizes: [3, 6, 40]  # shape, scale, orientation
+factor_names: ["shape", "scale", "orientation"]
+stream_dim: 256
+n_stream_blocks: 4
+n_heads: 8
+stream_aggregation: sum
+use_cross_attn: false
+dag_edges: []  # independent factors
+use_gating: true

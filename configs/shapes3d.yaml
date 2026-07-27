@@ -1,0 +1,14 @@
+dataset: 3dshapes
+image_size: 64
+patch_size: 4
+in_channels: 3
+n_factors: 6
+factor_sizes: [10, 10, 10, 8, 4, 15]
+factor_names: ["floor_hue", "wall_hue", "object_hue", "scale", "shape", "orientation"]
+stream_dim: 256
+n_stream_blocks: 4
+n_heads: 8
+stream_aggregation: sum
+use_cross_attn: false
+dag_edges: []  # independent factors (3DShapes source)
+use_gating: true

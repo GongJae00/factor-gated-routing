@@ -35,3 +35,10 @@ paper/
 Thumbs.db
 .vscode/
 .idea/
+
+# Environment
+.env
+*.pt
+*.pth
+checkpoint*
+h5
