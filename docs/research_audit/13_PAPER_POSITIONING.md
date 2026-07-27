@@ -1,34 +1,36 @@
 # 13 — Paper Positioning
 
-## Recommended Title
+## Recommended Title (pending literature verification)
 
 **Factor-Path Diffusion: Graph-Surgical Routing for Auditable Conditional Generation**
 
-Rationale: Drops "Verifiable" (weak), drops "Controllable" (too broad), adds "Graph-Surgical" (precise novelty), "Auditable" (distinct contribution).
+Rationale: Drops "Verifiable" (vague), drops "Controllable" (too broad), adds "Graph-Surgical" (precise novelty claim pending literature), "Auditable" (distinct contribution). Title is provisional — final determination after literature saturation.
 
-## Three-Line Central Claim
+## Three-Line Central Claim (safe version)
 
-> We factorize condition-to-score computation into explicit factor-specific paths and constrain inter-path communication with a known graph. Node and edge interventions provide exact computational-path non-interference, while paired counterfactual evaluation quantifies target efficacy and off-target leakage.
+> We factorize condition-to-score computation into explicit factor-specific paths and constrain inter-path communication with a known graph. Node and edge interventions provide exact computational-path non-interference, while paired-noise evaluation with shared random numbers quantifies target efficacy and off-target leakage via a K×K factor matrix.
 
-## Three Contributions
+**Note**: "paired counterfactual" replaced with "paired-noise evaluation with shared random numbers" — SCM causal semantics not claimed.
 
-1. **Architecture**: Factor-path denoiser with typed graph-surgical intervention interface (6 modes: observational, factor_edit, path_ablation, node_deletion, edge_ablation, graph_surgery).
+## Three Contributions (hypothesized, not empirically verified)
 
-2. **Theory**: Path Non-Interference Theorem — if all paths from factor embedding e_i to output pass through multiplicative cut, then output is functionally invariant to e_i when the cut is zero. Trajectory-level corollary for shared-noise sampling.
+1. **Architecture**: Factor-path denoiser with typed intervention interface (8 modes: observational, factor_edit, direct_output_ablation, full_source_cut, node_deletion, edge_ablation, neural_graph_surgery, condition_mask).
 
-3. **Evaluation**: Paired NoiseTrace protocol + K×K factor leakage matrix on dSprites, 3DShapes, and Causal3DIdent (known-SCM benchmark), demonstrating that correct factor graph routing reduces off-target leakage vs. monolithic and wrong-graph baselines.
+2. **Theory**: Path Non-Interference Theorem — if all directed paths from factor embedding e_i to denoiser output pass through a complete cutset, then output is functionally invariant to e_i when cut. Trajectory-level induction for shared-noise sampling. Grönwall-based sensitivity bound (unverified proof sketch).
+
+3. **Evaluation protocol**: NoiseTrace-mediated paired evaluation with common random numbers, K×K OffTargetChange matrix, held-out compositional splits, and staged experiments across dSprites, 3DShapes, and known-SCM benchmarks.
 
 ## Claims Ladder
 
-| Level | Claim | Evidence Required |
-|-------|-------|-------------------|
-| L0 | Separate parameter paths exist per factor | Code inspection |
-| L1 | Path cut → exact functional invariance | Theorem + finite-difference test |
-| L2 | FGR reduces off-target leakage | Paired evaluation + leakage matrix |
-| L3 | Correct graph > wrong graph for intervention | Causal3DIdent benchmark |
-| L4 | Neural intervention ≈ SCM do-intervention | **NOT CLAIMED in this version** |
+| Level | Claim | Evidence Required | Status |
+|-------|-------|-------------------|--------|
+| L0 | Separate parameter paths exist per factor | Code inspection | Available in c6cc096 |
+| L1 | Full source cut → exact functional invariance | Theorem + finite-diff test + trajectory induction | Requires architecture redesign |
+| L2 | FGR off-target leakage ≤ monolithic baseline | Paired evaluation + OffTargetChange matrix | Hypothesis — not tested |
+| L3 | Correct graph routing reduces leakage vs wrong graph | Causal3DIdent (known-SCM) benchmark | Hypothesis — not tested |
+| L4 | Neural graph surgery ≈ causal intervention | IIT alignment or SCM proof | **NOT CLAIMED** — future work |
 
-L4 is deferred to future work (requires IIT alignment or SCM equivalence proof).
+**All L2-L3 claims are hypotheses pending experiment.** Current document uses "we hypothesize" and "we will test" language.
 
 ## Paper Structure
 

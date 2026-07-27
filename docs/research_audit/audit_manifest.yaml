@@ -1,0 +1,89 @@
+audit_commit: "aa14213af5667157000c94776fdd1d086575130e"
+code_commit: "c6cc0968ccf4b39e6400792b6bdd38a4e57135cd"
+cutoff_date: "2026-07-27"
+audit_version: "v2"
+status: COMPLETE
+implementation_start: BLOCKED
+
+documents:
+  - path: docs/research_audit/README.md
+    status: COMPLETE
+    purpose: "Audit index and reading guide"
+  - path: docs/research_audit/00_EXECUTIVE_VERDICT.md
+    status: COMPLETE
+    purpose: "Three verdicts: research direction, audit completeness, implementation start"
+  - path: docs/research_audit/01_REPOSITORY_FORENSICS.md
+    status: COMPLETE
+    purpose: "Full file inventory and H-001 through H-085 adjudication"
+  - path: docs/research_audit/02_CLAIM_EVIDENCE_MATRIX.md
+    status: COMPLETE
+    purpose: "README and MATH_NOTES claims traced to code/evidence"
+  - path: docs/research_audit/03_LITERATURE_NOVELTY_MAP.md
+    status: BLOCKED
+    purpose: "Nearest works, overlap analysis, novelty verdict"
+    blocked_reason: "API rate-limiting prevented exhaustive automated literature search"
+  - path: docs/research_audit/04_THEORY_REFORMULATION.md
+    status: COMPLETE
+    purpose: "Path Non-Interference Theorem, Grönwall bound, branch identifiability"
+  - path: docs/research_audit/05_ARCHITECTURE_OPTIONS.md
+    status: COMPLETE
+    purpose: "4 architecture candidates compared, primary (B) + fallback (A) selected"
+  - path: docs/research_audit/06_SELECTED_ARCHITECTURE_SPEC.md
+    status: COMPLETE
+    purpose: "Canonical specification: graph types, InterventionSpec 8 modes, data flow"
+  - path: docs/research_audit/07_BASELINE_FIDELITY_PLAN.md
+    status: COMPLETE
+    purpose: "Baseline rename/implement decisions, fairness regime"
+  - path: docs/research_audit/08_DATA_AND_EVALUATION_PROTOCOL.md
+    status: COMPLETE
+    purpose: "Dataset roles, splits, NoiseTrace, metrics, statistical plan"
+  - path: docs/research_audit/09_EXPERIMENT_MASTER_MATRIX.md
+    status: COMPLETE
+    purpose: "31 experiment rows across 7 stages"
+  - path: docs/research_audit/10_IMPLEMENTATION_BACKLOG.md
+    status: COMPLETE
+    purpose: "60+ tasks across 19 work packages with dependency DAG"
+  - path: docs/research_audit/11_TEST_AND_VERIFICATION_PLAN.md
+    status: COMPLETE
+    purpose: "38 tests with dtype-aware acceptance criteria"
+  - path: docs/research_audit/12_RISK_AND_PIVOT_REGISTER.md
+    status: COMPLETE
+    purpose: "23 risks with mitigation, 3 full pivot descriptions"
+  - path: docs/research_audit/13_PAPER_POSITIONING.md
+    status: COMPLETE
+    purpose: "Title, claims ladder (hypothesis-only), paper structure, figures/tables"
+  - path: docs/research_audit/14_DEFINITION_OF_DONE.md
+    status: COMPLETE
+    purpose: "8-phase gate checklist with kill criteria"
+  - path: docs/research_audit/15_TRACEABILITY_AND_COMPLIANCE.md
+    status: COMPLETE
+    purpose: "Finding→task→test→gate→claim linkage matrix"
+  - path: docs/research_audit/audit_manifest.yaml
+    status: COMPLETE
+    purpose: "Machine-readable audit state"
+
+research_verdict: CONDITIONAL_GO
+audit_verdict: COMPLETE
+implementation_verdict: BLOCKED
+
+counts:
+  documents: 18
+  hypotheses_adjudicated: 85
+  findings: 85
+  implementation_tasks: 62
+  tests: 38
+  nearest_works: 12
+  risks: 23
+  experiments: 31
+  blocked_items: 2
+
+blocked_items:
+  - item: "Literature search saturation"
+    reason: "API rate-limiting"
+    plan: "PI to conduct manual search with direct paper access"
+  - item: "Implementation start"
+    reason: "Specification gate not passed"
+    plan: "Freeze terminology, InterventionSpec, graph types, metrics; then proceed"
+
+primary_architecture: "Candidate B (shared trunk + factor adapters)"
+fallback_architecture: "Candidate A (fully independent additive streams)"

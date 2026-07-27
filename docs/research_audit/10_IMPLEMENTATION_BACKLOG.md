@@ -1,7 +1,8 @@
-# 10 — Implementation Backlog
+# 10 — Implementation Backlog (v2)
 
-**Total tasks**: 50+, organized into 18 Work Packages.
+**Total tasks**: 60+, organized into 19 Work Packages.
 **Priority**: P0 (must fix before GPU), P1 (before pilot), P2 (before submission).
+**Full schema**: Each task below has ID, Priority, WP, Objective, Affected files, Effort.
 
 ## WP-00: Repository Stabilization
 
@@ -10,7 +11,7 @@
 | T-00-01 | P0 | Fix README: `cd gauge-sensitive-inverse-generation` → `cd factor-gated-routing` | XS |
 | T-00-02 | P0 | Fix AGENTS.md: `fgr/` → `src/` | XS |
 | T-00-03 | P0 | Fix .gitignore: remove bare `h5`, `checkpoint*`; add `*.h5`, `checkpoint*/` | XS |
-| T-00-04 | P1 | Run `research-check .` and fix all issues | M |
+| T-00-04 | P1 | Run `python -m pytest tests/ -v` and verify all tests pass; run `python -c "from src.model import FGRDiT; from src.baselines import *"` import smoke test | M |
 | T-00-05 | P1 | Add exact environment lock (pip freeze / conda-lock) | S |
 
 ## WP-01: Configuration Unification
@@ -182,7 +183,7 @@
 
 ---
 
-## Dependency DAG (Mermaid)
+## Dependency DAG (Mermaid — corrected)
 
 ```mermaid
 graph TD
@@ -202,29 +203,43 @@ graph TD
   WP13[WP-13 Statistics]
   WP14[WP-14 Tests]
   WP15[WP-15 Documentation]
+  WP16[WP-16 Experiment]
+  WP17[WP-17 Paper Artifacts]
+  WP18[WP-18 Reproducibility]
+  WP19[WP-19 Gate Training Decision]
 
   WP00 --> WP01
   WP01 --> WP02
   WP01 --> WP03
+  WP01 --> WP11
   WP02 --> WP03
   WP03 --> WP04
-  WP04 --> WP06
-  WP07 --> WP08
-  WP03 --> WP07
   WP04 --> WP05
-  WP05 --> WP07
-  WP02 --> WP11
-  WP01 --> WP11
+  WP04 --> WP06
   WP04 --> WP12
-  WP12 --> WP08
-  WP07 --> WP09
+  WP04 --> WP19
+  WP03 --> WP07
+  WP05 --> WP07
+  WP07 --> WP08
+  WP06 --> WP08
+  WP09 --> WP08
   WP10 --> WP08
+  WP12 --> WP08
   WP08 --> WP13
-  WP15 --> all
+  WP11 --> WP14
+  WP02 --> WP14
+  WP04 --> WP14
+  WP07 --> WP14
+  WP13 --> WP16
+  WP08 --> WP16
+  WP14 --> WP16
+  WP16 --> WP17
+  WP17 --> WP18
 
   classDef p0 fill:#f66,color:#fff
   classDef p1 fill:#fa0
   classDef p2 fill:#0af
   class WP00,WP01,WP02,WP03,WP04,WP06,WP07,WP08,WP11 p0
-  class WP05,WP09,WP10,WP12,WP13,WP14,WP15 p1
+  class WP05,WP09,WP10,WP12,WP13,WP14,WP15,WP19 p1
+  class WP16,WP17,WP18 p2
 ```

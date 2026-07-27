@@ -27,35 +27,45 @@ for layer l in 1..L:
 ε̂ = ε_base + Σ_i ε_i
 ```
 
-## Gate Taxonomy (typed InterventionSpec)
+## Graph Type Enum
 
-| Gate | Symbol | Semantics |
-|------|--------|-----------|
-| output gate | o_i ∈ [0,1] | Controls direct output contribution of stream i to ε̂ |
-| edge gate | r_{j→i}^(l) ∈ [0,1] | Controls message from parent j to child i at layer l |
-| node cut | c_i^{in}=0 ∀ j∈Pa(i) | Cuts ALL incoming edges to node i |
-| outgoing preserve | r_{i→k}=1 ∀ k∈Ch(i) | Keeps outgoing edges when incoming is cut |
+```python
+class GraphType(enum.Enum):
+    INDEPENDENT = "independent"      # No edges
+    DAG = "dag"                      # Directed acyclic, validated at construction
+    DENSE_DIRECTED = "dense_directed" # All j≠i (K>1 has 2-cycles, NOT a DAG)
+    CUSTOM = "custom"                # Explicit edge list, may contain cycles (user beware)
+```
 
-## Intervention Modes
+**Key distinction**: DENSE_DIRECTED is NOT a DAG when K>1. It contains the 2-cycle (0→1,1→0). Graph validation at construction raises ValueError for cycles only in DAG mode. DENSE_DIRECTED mode runs synchronous layerwise updates (all states from layer-(l-1) snapshot), so node index order is irrelevant.
+
+## Gate Taxonomy (typed InterventionSpec — canonical 8 modes)
 
 ```python
 @dataclass
 class InterventionSpec:
-    mode: str  # "observational", "factor_edit", "path_ablation", "graph_surgery"
-    edited_factors: dict[int, int] | None  # factor_idx → new_value
-    output_gates: list[float] | None        # per-stream o_i
-    incoming_cut: set[int] | None           # nodes whose incoming edges are cut
-    edge_gates: dict[(int,int), float] | None  # (parent,child) → r value
+    mode: str  # one of the 8 canonical modes below
+    edited_factors: dict[int, int] | None       # factor_idx → new_value
+    output_gates: list[float] | None             # per-stream o_i ∈ [0,1]
+    incoming_cut: set[int] | None                # nodes whose incoming edges are cut
+    outgoing_preserve: set[int] | None           # nodes whose outgoing edges are preserved (when incoming is cut)
+    edge_mask: dict[tuple[int,int], float] | None  # (parent,child) → r value (per-edge, per-layer if layered)
 ```
 
 | Mode | factor | o_i | r_{*→i} | r_{i→*} | Meaning |
 |------|--------|-----|---------|---------|---------|
 | observational | original | 1 | 1 | 1 | Normal conditional generation |
-| factor_edit | v→v' | 1 | 1 | 1 | Change factor value |
-| path_ablation | original | 0 | 1 | 1 | Silence stream output |
-| node_deletion | irrelevant | 0 | 0 | 0 | Remove stream entirely |
-| edge_ablation | original | 1 | selected=0 | 1 | Cut specific edge |
-| graph_surgery | v' | 1 | 0 (incoming) | 1 (outgoing) | do-like operation |
+| factor_edit | v→v' | 1 | 1 | 1 | Change factor value, all paths open |
+| direct_output_ablation | original | 0 | 1 | 1 | Silence direct output ε_i; messages to children UNCHANGED |
+| full_source_cut | irrelevant | 0 | 0 | 0 | Cut ALL e_i→output paths; output invariant to f_i (Path Non-Interference Theorem applies) |
+| node_deletion | irrelevant | 0 | 0 | 0 | Delete node i entirely |
+| edge_ablation | original | 1 | selected 0 | 1 | Cut specific parent→child edge |
+| neural_graph_surgery | v' | 1 | 0 (incoming) | 1 (outgoing) | Intervene on node i: cut parent→i edges, inject v', keep i→child edges |
+| condition_mask | hidden | 1 | 1 | 1 | Replace f_i with null/masked token |
+
+**Critical distinction**: `direct_output_ablation` (o_i=0) does NOT guarantee Path Non-Interference if outgoing messages exist. Only `full_source_cut` provides the complete cutset needed for the theorem.
+
+**Terminology**: `neural_graph_surgery` replaces the former `graph_surgery` (which was imprecisely named). It is NOT a causal do-operator. It cuts incoming neural edges, injects a new factor value, and preserves outgoing neural edges. No SCM equivalence is claimed.
 
 ## Key Design Decisions
 
