@@ -1,7 +1,7 @@
 import torch
 import pytest
-from fgr.model import FGRDiT, FGRStream
-from fgr.config import ModelConfig
+from src.model import FGRDiT, FGRStream
+from src.config import ModelConfig
 
 
 def test_fgr_forward_shape():

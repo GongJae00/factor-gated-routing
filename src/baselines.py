@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from fgr.utils import timestep_embedding, PatchEmbed, FactorEmbed, DiTBlock
+from src.utils import timestep_embedding, PatchEmbed, FactorEmbed, DiTBlock
 
 
 def unpatchify(x, patch_size):

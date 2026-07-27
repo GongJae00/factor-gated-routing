@@ -1,6 +1,6 @@
 import os
 import pytest
-from fgr.dataset import DSpritesDataset
+from src.dataset import DSpritesDataset
 
 DSPRITES = os.environ.get("DSPRITES_PATH", "/tmp/dsprites/dsprites.npz")
 requires_dsprites = pytest.mark.skipif(not os.path.exists(DSPRITES), reason="dSprites dataset not found")

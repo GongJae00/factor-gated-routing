@@ -1,5 +1,5 @@
-from fgr.model import FGRDiT
-from fgr.baselines import build_baseline
+from src.model import FGRDiT
+from src.baselines import build_baseline
 
 MODEL_REGISTRY = {
     "FGR": FGRDiT,

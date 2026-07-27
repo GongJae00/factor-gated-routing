@@ -16,7 +16,7 @@ For theoretical motivation, see [`MATH_NOTES.md`](MATH_NOTES.md).
 ## Structure
 
 ```
-fgr/
+src/
 ├── model.py          FGRDiT, FGRStream
 ├── baselines.py      SDiT, EncDiff, MMDiT-k, CoInD, CF-DiT
 ├── train.py          Training (6 models × 2 datasets)
@@ -84,8 +84,8 @@ factor-level changes. Train it once:
 import torch, torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
-from fgr.oracle import OracleClassifier
-from fgr.dataset import DSpritesDataset
+from src.oracle import OracleClassifier
+from src.dataset import DSpritesDataset
 
 device = torch.device("cuda")
 factor_sizes = (3, 6, 40)  # shape, scale, orientation
@@ -111,7 +111,7 @@ torch.save(oracle.state_dict(), "output/oracle.pt")
 
 Single model:
 ```bash
-python -m fgr.train \
+python -m src.train \
   --model FGR --dataset dsprites \
   --steps 400000 --batch-size 128 \
   --output-dir output/fgr_seed42 \
@@ -127,10 +127,10 @@ bash scripts/run_full_experiment.sh dsprites 400000 42
 
 ```bash
 # Full cross-attention (all-to-all, no DAG topology)
-python -m fgr.train --model FGR --ablation full_ca ...
+python -m src.train --model FGR --ablation full_ca ...
 
 # No inter-stream cross-attention (independent streams)
-python -m fgr.train --model FGR --ablation no_inter_stream ...
+python -m src.train --model FGR --ablation no_inter_stream ...
 ```
 
 ### Evaluation
@@ -138,7 +138,7 @@ python -m fgr.train --model FGR --ablation no_inter_stream ...
 ```bash
 export FGR_ORACLE_PATH=output/oracle.pt
 
-python -m fgr.evaluate \
+python -m src.evaluate \
   --model FGR --dataset dsprites \
   --checkpoint output/fgr_seed42/FGR_ema_final.pt \
   --n-samples 256 --n-steps 200 \

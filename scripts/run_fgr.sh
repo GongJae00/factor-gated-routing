@@ -14,7 +14,7 @@ OUT="$FGR_OUTPUT_DIR/${DATASET}_${MODEL}_seed${SEED}"
 mkdir -p "$OUT"
 echo "Training $MODEL on $DATASET (seed=$SEED, steps=$STEPS) → $OUT"
 
-.venv/bin/python3 -m fgr.train \
+.venv/bin/python3 -m src.train \
   --model "$MODEL" --dataset "$DATASET" \
   --output-dir "$OUT" --steps "$STEPS" \
   --batch-size 128 --seed "$SEED" \

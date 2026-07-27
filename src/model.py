@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 
-from fgr.utils import timestep_embedding, PatchEmbed, FactorEmbed, DiTBlock, CrossAttnBlock
-from fgr.baselines import unpatchify
+from src.utils import timestep_embedding, PatchEmbed, FactorEmbed, DiTBlock, CrossAttnBlock
+from src.baselines import unpatchify
 
 
 class FGRStream(nn.Module):

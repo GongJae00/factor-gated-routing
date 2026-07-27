@@ -21,7 +21,7 @@ for model in "${MODELS[@]}"; do
   mkdir -p "$OUT"
   echo ""
   echo ">>> Training $model on $DATASET (seed=$SEED) <<<"
-  .venv/bin/python3 -m fgr.train \
+  .venv/bin/python3 -m src.train \
     --model "$model" --dataset "$DATASET" \
     --output-dir "$OUT" --steps "$STEPS" \
     --batch-size 128 --seed "$SEED" \

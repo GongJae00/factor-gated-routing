@@ -1,7 +1,7 @@
 import torch
 import pytest
-from fgr.config import ModelConfig
-from fgr.baselines import build_baseline, SingleStreamDiT, EncDiffDiT, MMDiTk, CoInDDiT, CFDiT
+from src.config import ModelConfig
+from src.baselines import build_baseline, SingleStreamDiT, EncDiffDiT, MMDiTk, CoInDDiT, CFDiT
 
 
 def test_sdit_forward():

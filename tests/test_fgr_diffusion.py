@@ -1,6 +1,6 @@
 import torch
-from fgr.diffusion import get_alpha_bars
-from fgr.oracle import OracleClassifier
+from src.diffusion import get_alpha_bars
+from src.oracle import OracleClassifier
 
 
 def test_alpha_bars_linear():

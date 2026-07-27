@@ -3,12 +3,12 @@ import torch
 import numpy as np
 from torch.utils.data import DataLoader
 
-from fgr.config import ModelConfig, get_data_path, get_output_dir, get_oracle_path
-from fgr.dataset import DSpritesDataset
-from fgr.utils import safe_load_state_dict
-from fgr.diffusion import get_alpha_bars, sample_images
-from fgr.oracle import OracleClassifier
-from fgr.registry import MODEL_REGISTRY
+from src.config import ModelConfig, get_data_path, get_output_dir, get_oracle_path
+from src.dataset import DSpritesDataset
+from src.utils import safe_load_state_dict
+from src.diffusion import get_alpha_bars, sample_images
+from src.oracle import OracleClassifier
+from src.registry import MODEL_REGISTRY
 
 
 DSPRITES_FACTORS = dict(n_factors=3, factor_sizes=(3, 6, 40), in_channels=1)
@@ -70,7 +70,7 @@ def main():
     if args.dataset == "dsprites":
         dataset = DSpritesDataset(get_data_path("dsprites"), split="test", seed=args.seed)
     else:
-        from fgr.dataset import Shapes3DDataset
+        from src.dataset import Shapes3DDataset
         dataset = Shapes3DDataset(get_data_path("3dshapes"), split="test", seed=args.seed)
     loader = DataLoader(dataset, batch_size=args.n_samples, shuffle=True)
     ref_batch = next(iter(loader))

@@ -4,10 +4,10 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 
-from fgr.config import ModelConfig, get_data_path, get_output_dir
-from fgr.dataset import DSpritesDataset, Shapes3DDataset
-from fgr.diffusion import get_alpha_bars
-from fgr.registry import MODEL_REGISTRY
+from src.config import ModelConfig, get_data_path, get_output_dir
+from src.dataset import DSpritesDataset, Shapes3DDataset
+from src.diffusion import get_alpha_bars
+from src.registry import MODEL_REGISTRY
 
 
 DATASET_REGISTRY = {
