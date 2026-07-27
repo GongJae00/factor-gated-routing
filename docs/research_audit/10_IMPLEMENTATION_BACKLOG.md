@@ -9,7 +9,6 @@
 | ID | Priority | Task | Effort |
 |----|----------|------|--------|
 | T-00-01 | P0 | Fix README: `cd gauge-sensitive-inverse-generation` → `cd factor-gated-routing` | XS |
-| T-00-02 | P0 | Fix AGENTS.md: `fgr/` → `src/` | XS |
 | T-00-03 | P0 | Fix .gitignore: remove bare `h5`, `checkpoint*`; add `*.h5`, `checkpoint*/` | XS |
 | T-00-04 | P1 | Run `python -m pytest tests/ -v` and verify all tests pass; run `python -c "from src.model import FGRDiT; from src.baselines import *"` import smoke test | M |
 | T-00-05 | P1 | Add exact environment lock (pip freeze / conda-lock) | S |
@@ -31,7 +30,7 @@
 |----|----------|------|--------|
 | T-02-01 | P0 | Create `src/graph.py` with DAG validation: cycle check, node range, duplicate edges | M |
 | T-02-02 | P0 | Add topological sort to `FGRDiT.forward` — validate edges before forward pass | S |
-| T-02-03 | P1 | Enable `complete` graph mode: all (j,i) for j≠i | S |
+| T-02-03 | P1 | Enable DENSE_DIRECTED graph mode: all (j,i) for j≠i | S |
 | T-02-04 | P1 | Enable node ID permutation consistency — renumbering nodes + permuting params preserves output | M |
 
 ## WP-03: Synchronous Layerwise Routing
@@ -48,9 +47,9 @@
 | ID | Priority | Task | Effort |
 |----|----------|------|--------|
 | T-04-01 | P0 | Create `src/interventions.py` with `InterventionSpec` dataclass | M |
-| T-04-02 | P0 | Implement all 6 modes in `FGRDiT.forward`: observational, factor_edit, path_ablation, node_deletion, edge_ablation, graph_surgery | L |
+| T-04-02 | P0 | Implement all 8 modes in `FGRDiT.forward`: observational, factor_edit, condition_mask, direct_output_ablation, factor_source_cut, node_deletion, edge_ablation, neural_graph_surgery | L |
 | T-04-03 | P0 | Remove scalar `gates` parameter from public API; replace with `InterventionSpec` | M |
-| T-04-04 | P0 | Ensure graph_surgery mode: incoming edges cut, outgoing edges preserved, factor value intervened | M |
+| T-04-04 | P0 | Ensure neural_graph_surgery mode: incoming edges cut, outgoing edges preserved, factor value intervened | M |
 
 ## WP-05: Base Stream and Factor Score Decomposition
 
@@ -85,7 +84,7 @@
 | T-08-01 | P0 | Rewrite evaluate.py: use shared NoiseTrace for normal→intervention comparison | L |
 | T-08-02 | P0 | Implement `LeakageMatrix`: K×K matrix L_ij = P[Oracle_j(x_edit_i) ≠ Oracle_j(x_original)] | M |
 | T-08-03 | P0 | Ensure new_factor ≠ old_factor (offset sampling, not independent randint) | XS |
-| T-08-04 | P0 | Separate evaluation into 3 protocols: factor_edit, path_ablation, cut_path_invariance | M |
+| T-08-04 | P0 | Separate evaluation into 3 protocols: factor_edit, factor_source_cut, neural_graph_surgery | M |
 | T-08-05 | P1 | Add non-target preservation per-factor metric S_i | S |
 | T-08-06 | P1 | Fix conditional accuracy overwrite bug (measure once, not per-loop) | XS |
 | T-08-07 | P2 | Implement gate response AUC, monotonicity violation count, local sensitivity | M |
@@ -158,7 +157,7 @@
 | T-15-01 | P0 | Rewrite MATH_NOTES: remove Prop 4, downgrade Prop 2, correct Prop 1, add Path Non-Interference Theorem | M |
 | T-15-02 | P0 | Remove all do-operator language from README and MATH_NOTES | S |
 | T-15-03 | P1 | Update README architecture diagram and baseline table | M |
-| T-15-04 | P1 | Add INTERVENTION.md describing the 6 intervention modes | M |
+| T-15-04 | P1 | Add INTERVENTION.md describing the 8 intervention modes | M |
 
 ## WP-16: Experiment Orchestration
 

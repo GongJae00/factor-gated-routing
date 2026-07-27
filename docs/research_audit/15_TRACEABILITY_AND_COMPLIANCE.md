@@ -11,7 +11,7 @@ This matrix links every P0 finding to its implementation task, test, phase gate,
 | H-006 (no topological sort) | Graph validation at construction | Graph validation | T-02-01, T-02-02 | T-01-T-04 | Gate 2 | L0 |
 | H-008 (no layerwise routing) | Synchronous layerwise | Synchronous routing | T-03-01, T-03-02 | T-11 | Gate 2 | L1 |
 | H-015 (gate always 1) | Gate exposure in training | Gate training decision | WP-19 | — | Gate 4 | L2 |
-| H-019 (gate ≠ do) | Remove do-operator language | Terminology policy | T-15-02 | — | Gate 1 | — |
+| H-019 (gate ≠ do) | Remove do-operator language | Terminology policy | T-15-02 | T-15-02 | Gate 1 | — |
 | H-027 (Prop 4 false) | Replace with sensitivity bound | Theory scope | T-15-01 | — | Gate 1 | — |
 | H-034-037 (unpaired sampling) | NoiseTrace paired evaluation | DDIM + counter-seed NoiseTrace | T-07-01-T-07-04 | T-17-T-22 | Gate 2 | — |
 | H-038 (new=old possible) | Offset-based sampling | — | T-08-03 | T-35 | Gate 2 | — |

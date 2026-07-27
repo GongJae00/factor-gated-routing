@@ -1,0 +1,354 @@
+spec_version: "3.0"
+description: >
+  Canonical metric definitions for Factor-Path Diffusion evaluation.
+  All experiment scripts, plotting code, and paper tables MUST reference
+  metrics by their canonical names defined herein. Metric names are
+  case-sensitive and follow snake_case convention.
+
+# =============================================================================
+# CATEGORICAL FACTOR METRICS
+# =============================================================================
+
+categorical:
+  TargetValueSuccess:
+    formula: >
+      For factor i with target value v:
+        argmax_k P(decoder(f_i=k | epsilon_hat)) == v
+      Averaged over test samples.
+    range: "[0, 1]"
+    direction: "higher is better"
+    aggregation_unit: "per-factor, per-class breakdown available"
+    oracle_dependency: "requires ground-truth factor value from dataset"
+    ci_method: "Clopper-Pearson binomial CI (exact)"
+    notes: >
+      Measures whether the model correctly reconstructs a specific factor
+      value from the denoised output. Evaluates factor-level representation
+      quality. Computed by passing epsilon_hat through a frozen decoder
+      (classifier head trained on clean data).
+
+  TargetChangeRate:
+    formula: >
+      For intervention FACTOR_EDIT on factor i (v_orig -> v_new):
+        (1/N) * sum_{n=1}^N Indicator[
+          argmax_k P(decoder(f_i=k | epsilon_hat_intervened))
+          == argmax_k P(decoder(f_i=k | epsilon_hat_baseline))
+        ]
+      where baseline uses OBSERVATIONAL mode.
+    range: "[0, 1]"
+    direction: "targeted: higher is better (for intended change)"
+    aggregation_unit: "per-factor, per-edit-pair"
+    oracle_dependency: "requires known edit mapping (v_orig, v_new) and frozen decoder"
+    ci_method: "Clopper-Pearson binomial CI"
+    notes: >
+      Measures whether editing factor i's input value causes the decoded
+      factor i to change as expected. High TargetChangeRate indicates that
+      the factor is causally manipulable through the model.
+
+  OffTargetChange:
+    formula: >
+      For intervention FACTOR_EDIT on factor i (v_orig -> v_new):
+        (1/(K-1)) * sum_{j != i} Indicator[
+          argmax_k P(decoder(f_j=k | epsilon_hat_intervened))
+          != argmax_k P(decoder(f_j=k | epsilon_hat_baseline))
+        ]
+    range: "[0, 1]"
+    direction: "lower is better (factor isolation)"
+    aggregation_unit: "per-target-factor, averaged over non-target factors"
+    oracle_dependency: "requires frozen decoder and all factor labels"
+    ci_method: "Clopper-Pearson binomial CI, then average CI via delta method"
+    notes: >
+      Measures unintended changes to non-target factors when editing factor i.
+      Ideal value is 0 (perfect factor isolation). Non-zero values indicate
+      entanglement or leakage through the shared trunk.
+
+  NoOpChange:
+    formula: >
+      For intervention OBSERVATIONAL (identity intervention) compared to
+      a second OBSERVATIONAL forward pass:
+        (1/K) * sum_{i=1}^K Indicator[
+          argmax_k P(decoder(f_i=k | epsilon_hat_pass1))
+          != argmax_k P(decoder(f_i=k | epsilon_hat_pass2))
+        ]
+    range: "[0, 1]"
+    direction: "lower is better (0 = deterministic)"
+    aggregation_unit: "per-sample, averaged over factors"
+    oracle_dependency: "requires frozen decoder"
+    ci_method: "Clopper-Pearson binomial CI"
+    notes: >
+      Measures output stability. For a deterministic model, this should be
+      exactly 0. Non-zero values indicate non-determinism (e.g., from
+      dropout in eval mode, or sampling stochasticity). Serves as a
+      sanity check baseline.
+
+  SourceInvarianceError_Denoiser:
+    formula: >
+      For intervention FACTOR_SOURCE_CUT on factor i:
+        (1/N) * sum_{n=1}^N || epsilon_hat_cut - epsilon_hat_baseline ||_2^2
+    range: "[0, ∞)"
+    direction: "lower is better (0 = perfect invariance)"
+    aggregation_unit: "per-factor"
+    oracle_dependency: "none (self-consistency check, no ground truth needed)"
+    ci_method: "bootstrap CI on mean squared L2 difference"
+    notes: >
+      Measures whether cutting factor i's source gate (source_gate_i = 0)
+      leaves the denoiser output unchanged. By the Factor-Source Path
+      Non-Interference theorem, this MUST be zero if the architecture
+      is correctly implemented. Non-zero values indicate implementation
+      bugs (e.g., branch-to-trunk write leakage).
+
+  SourceInvarianceError_Trajectory:
+    formula: >
+      For intervention FACTOR_SOURCE_CUT on factor i:
+        (1/(T*N)) * sum_{t=1}^T sum_{n=1}^N || x_{t-1}^cut - x_{t-1}^baseline ||_2^2
+      where T is the number of sampling steps.
+    range: "[0, ∞)"
+    direction: "lower is better (0 = perfect invariance)"
+    aggregation_unit: "per-factor, per-timestep breakdown available"
+    oracle_dependency: "none (self-consistency check)"
+    ci_method: "bootstrap CI on mean squared L2 difference, pooled over timesteps"
+    notes: >
+      Measures whether cutting factor i's source gate affects the full
+      reverse diffusion trajectory. This is a stronger test than the
+      single-step denoiser version, as errors can accumulate over
+      multiple sampling steps. Should be zero for correct implementation.
+
+  DirectContributionEffect:
+    formula: >
+      For intervention DIRECT_OUTPUT_ABLATION on factor i:
+        Effect_i = (1/N) * sum_n || epsilon_hat_baseline - epsilon_hat_ablated ||_2^2
+      Normalized by: Effect_i / sum_j Effect_j (relative contribution)
+    range: "[0, ∞) for raw; [0, 1] for normalized"
+    direction: "descriptive; larger = stronger direct contribution"
+    aggregation_unit: "per-factor"
+    oracle_dependency: "none"
+    ci_method: "bootstrap CI"
+    notes: >
+      Measures the direct additive contribution of factor i's output head.
+      This is NOT an invariance test. Even if factor i's head is zeroed,
+      its influence may persist through edge messages to other factors.
+      Compare with FACTOR_SOURCE_CUT for a clean invariance check.
+
+  EdgeEffect:
+    formula: >
+      For intervention EDGE_ABLATION on edge (j -> i):
+        Effect_{j->i} = (1/N) * sum_n || epsilon_hat_baseline - epsilon_hat_edge_cut ||_2^2
+    range: "[0, ∞)"
+    direction: "descriptive; larger = stronger edge influence"
+    aggregation_unit: "per-edge, per-layer"
+    oracle_dependency: "none"
+    ci_method: "bootstrap CI"
+    notes: >
+      Measures the effect of zeroing a single directed edge on the
+      final denoiser output. Can be decomposed by layer to identify
+      where inter-factor communication is most influential.
+
+  NonDescendantChange:
+    formula: >
+      For factor i with graph G, consider intervention on factor i.
+      Let A = {j: no directed path exists from i to j in G} (non-descendants).
+        (1/|A|) * sum_{j in A} Indicator[
+          argmax_k P(decoder(f_j=k | epsilon_hat_intervened))
+          != argmax_k P(decoder(f_j=k | epsilon_hat_baseline))
+        ]
+    range: "[0, 1]"
+    direction: "lower is better (graph-causal consistency)"
+    aggregation_unit: "per-factor, graph-dependent"
+    oracle_dependency: "requires frozen decoder, factor labels, and graph structure"
+    ci_method: "Clopper-Pearson CI, pooled over non-descendant set"
+    notes: >
+      Tests whether interventions on factor i affect factors that are
+      NOT descendants of i in the graph. If the graph correctly encodes
+      causal relations, non-descendants should be invariant to edits on i.
+      High NonDescendantChange indicates graph misspecification or
+      unintended information leakage.
+
+  DescendantResponse:
+    formula: >
+      For factor i with graph G, consider intervention FACTOR_EDIT on i.
+      Let D = {j: a directed path exists from i to j in G, j != i} (descendants).
+        (1/|D|) * sum_{j in D} Indicator[
+          argmax_k P(decoder(f_j=k | epsilon_hat_intervened))
+          != argmax_k P(decoder(f_j=k | epsilon_hat_baseline))
+        ]
+    range: "[0, 1]"
+    direction: "higher suggests stronger causal propagation (descriptive)"
+    aggregation_unit: "per-factor, graph-dependent"
+    oracle_dependency: "requires frozen decoder, factor labels, and graph structure"
+    ci_method: "Clopper-Pearson CI, pooled over descendant set"
+    notes: >
+      Measures whether factor i's edits propagate to its descendants
+      in the graph. Expected to be positive if the graph encodes a
+      meaningful causal structure. If DescendantResponse is low while
+      TargetChangeRate is high, the graph edges have little effect.
+
+  GraphVariantEffectSize:
+    formula: >
+      For two graph configurations G1, G2 with the same factor set:
+        EffectSize(G1, G2) = (1/N) * sum_n || epsilon_hat^G1 - epsilon_hat^G2 ||_2^2
+    range: "[0, ∞)"
+    direction: "descriptive; larger = greater architecture sensitivity"
+    aggregation_unit: "per-graph-pair"
+    oracle_dependency: "none (self-consistency)"
+    ci_method: "bootstrap CI on mean squared difference"
+    notes: >
+      Measures how much the denoiser output changes when the graph
+      structure changes. Compares INDEPENDENT vs DAG, DAG vs DENSE_DIRECTED,
+      etc. High effect size indicates the architecture is sensitive to
+      inter-factor graph structure.
+
+# =============================================================================
+# CONTINUOUS FACTOR METRICS
+# =============================================================================
+
+continuous:
+  TargetValueMSE:
+    formula: >
+      For continuous factor i:
+        (1/N) * sum_n (decoded_f_i - true_f_i)^2
+      where decoded_f_i is read from the denoised output via a frozen
+      regression head.
+    range: "[0, ∞)"
+    direction: "lower is better"
+    aggregation_unit: "per-factor"
+    oracle_dependency: "requires ground-truth continuous factor value"
+    ci_method: "bootstrap CI on RMSE"
+    notes: >
+      Analogous to TargetValueSuccess for continuous factors.
+      Uses MSE (or RMSE for reporting) instead of accuracy.
+
+  TargetChangeMagnitude:
+    formula: >
+      For intervention FACTOR_EDIT on continuous factor i (v_orig -> v_new):
+        (1/N) * sum_n |decoded_f_i^intervened - decoded_f_i^baseline|
+    range: "[0, ∞)"
+    direction: "descriptive; larger = stronger edit effect"
+    aggregation_unit: "per-factor, per-edit"
+    oracle_dependency: "requires frozen regression head"
+    ci_method: "bootstrap CI on mean absolute change"
+    notes: >
+      Measures the magnitude of change in decoded continuous factor i
+      resulting from editing its input value. Expected to correlate
+      with the edit magnitude (v_new - v_orig).
+
+  OffTargetContinuousChange:
+    formula: >
+      For intervention FACTOR_EDIT on continuous factor i:
+        (1/(K-1)) * sum_{j != i} |decoded_f_j^intervened - decoded_f_j^baseline|
+    range: "[0, ∞)"
+    direction: "lower is better"
+    aggregation_unit: "per-target-factor, averaged over non-target factors"
+    oracle_dependency: "requires frozen regression head for all factors"
+    ci_method: "bootstrap CI on pooled mean absolute change"
+    notes: >
+      Continuous analogue of OffTargetChange.
+      Measures unintended drift in non-target continuous factors.
+
+  FactorCorrelationMatrix:
+    formula: >
+      Across test samples, compute Pearson correlation between
+      decoded continuous factors i and j:
+        Corr(decoded_f_i, decoded_f_j)
+    range: "[-1, 1]"
+    direction: "descriptive; near 0 = factor disentanglement"
+    aggregation_unit: "per-factor-pair, matrix form"
+    oracle_dependency: "requires frozen regression head"
+    ci_method: "Fisher z-transformation CI"
+    notes: >
+      Measures pairwise correlation between decoded factor values.
+      Ideal values are near 0 (factors are independently decoded).
+      Non-zero correlations indicate entanglement in the learned
+      representation.
+
+  ReconstructionFID:
+    formula: >
+      FID between generated samples and real samples from the test set,
+      both encoded through a pretrained Inception-v3 feature space.
+    range: "[0, ∞)"
+    direction: "lower is better"
+    aggregation_unit: "global (single scalar per model)"
+    oracle_dependency: "requires pretrained Inception-v3, real test set"
+    ci_method: "bootstrap CI over multiple generated sample sets"
+    notes: >
+      Standard FID metric for image generation quality.
+      Used to verify that factor-specific architectural changes
+      do not degrade overall generation quality.
+
+  FactorDisentanglementScore:
+    formula: >
+      For each factor i, train a linear classifier on the latent
+      representation to predict factor i. Use majority-vote classification.
+      DCI disentanglement = (1/K) * sum_i (1 - H(row_i) / H(column_i))
+      where H is entropy, and row_i/column_i refer to the
+      importance matrix rows/columns.
+    range: "[0, 1]"
+    direction: "higher is better"
+    aggregation_unit: "global (single scalar per model)"
+    oracle_dependency: "requires factor labels and latent representations"
+    ci_method: "bootstrap CI over train/test splits of the classifier"
+    notes: >
+      DCI (Disentanglement, Completeness, Informativeness) metric.
+      Measures whether each latent dimension encodes exactly one factor.
+
+# =============================================================================
+# AGGREGATE / COMPOSITE METRICS
+# =============================================================================
+
+aggregate:
+  FactorIsolationIndex:
+    formula: >
+      (1/K) * sum_i [
+        TargetChangeRate_i * (1 - OffTargetChange_i)
+      ]
+    range: "[0, 1]"
+    direction: "higher is better"
+    components:
+      - TargetChangeRate (per factor)
+      - OffTargetChange (per factor)
+    notes: >
+      Composite metric balancing target edit success against off-target
+      interference. High FII requires both high edit success and low
+      unintended changes.
+
+  SourceInvarianceScore:
+    formula: >
+      (1/K) * sum_i Indicator[
+        SourceInvarianceError_Denoiser_i < epsilon_tol
+      ]
+    range: "[0, 1]"
+    direction: "higher is better (1 = all factors invariant)"
+    aggregation_unit: "global"
+    oracle_dependency: "none"
+    ci_method: "Clopper-Pearson binomial CI"
+    notes: >
+      Fraction of factors passing the source invariance test.
+      Should be exactly 1.0 for a correct implementation.
+      epsilon_tol default: 1e-6 for fp32, 1e-3 for fp16.
+
+# =============================================================================
+# METRIC NAMING CONVENTIONS
+# =============================================================================
+
+naming_conventions:
+  pattern: "snake_case"
+  prefix_rules:
+    - "Target*: metrics measuring intended factor decoding"
+    - "OffTarget*: metrics measuring unintended factor changes"
+    - "SourceInvariance*: metrics testing factor-source path isolation"
+    - "*Change: metrics measuring edit-induced change in decoded output"
+    - "*Effect: metrics measuring intervention effect magnitude"
+    - "*Score: normalized aggregate metrics in [0, 1]"
+    - "*Index: composite indices combining multiple metrics"
+  verbosity: "full names required in code; abbreviations allowed in paper tables with definition"
+
+# =============================================================================
+# STATISTICAL REPORTING STANDARDS
+# =============================================================================
+
+statistical_standards:
+  confidence_level: 0.95
+  significant_digits: 3
+  table_format: "mean ± half-CI-width"
+  plot_format: "mean line with CI band"
+  bootstrap_samples: 1000
+  multiple_testing_correction: "Benjamini-Hochberg (FDR) for per-factor metrics"
+  effect_size_reporting: "required alongside p-values; report Cohen's d or raw difference"

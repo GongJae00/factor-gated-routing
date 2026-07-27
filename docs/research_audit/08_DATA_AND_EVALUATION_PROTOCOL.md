@@ -5,7 +5,7 @@
 | Dataset | Resolution | Factors | Factor Values | Role | Why |
 |---------|-----------|---------|---------------|------|-----|
 | dSprites | 64×64 grayscale | shape(3), scale(6), rotation(40), pos_x(32), pos_y(32) | 3×6×40×32×32 = 737,280 | Code sanity + simple edit | Small, fast, well-studied. Factor independence means no graph structure to confound. |
-| 3DShapes | 64×64×3 RGB | floor_hue(10), wall_hue(10), object_hue(10), scale(8), shape(4), orientation(15) | 10×10×10×8×4×15 = 480,000 | Multi-factor RGB | Realistic colors, 6 factors, factor correlations exist (floor_hue ~ wall_hue in dataset generation). Tests whether FGR handles correlated factors. |
+| 3DShapes | 64×64×3 RGB | floor_hue(10), wall_hue(10), object_hue(10), scale(8), shape(4), orientation(15) | 10×10×10×8×4×15 = 480,000 | Multi-factor RGB | Realistic colors, 6 factors. Factors are **independent** — all 480,000 Cartesian combinations exist once. Tests multi-factor editing at scale. |
 | Causal3DIdent | 224×224×3 RGB | 7 continuous factors with known SCM DAG | Continuous (sampled from SCM) | Known-SCM graph correctness | Provides ground-truth causal graph. Essential for testing whether correct DAG > wrong DAG. Contains both independent and causally-dependent factors. |
 
 ## Factor Assignment Policy
@@ -99,7 +99,7 @@ Key properties:
 
 ### 3DShapes-Specific Notes
 
-3DShapes provides `.h5` with `images` (480,000, 64, 64, 3) and factor labels. Memory-mapped access is essential — full dataset is ~2.4 GB raw.
+3DShapes provides `.h5` with `images` (480,000, 64, 64, 3) and factor labels. Memory-mapped access is essential — full dataset is ~5.49 GB raw uint8 (~22 GB float32).
 
 ### Causal3DIdent-Specific Notes
 
@@ -225,23 +225,22 @@ Aggregate:
 
 **Constraint**: v_new ≠ v_old ALWAYS enforced. Use offset sampling: v_new = (v_old + uniform(1, N_i-1)) % N_i. Never use independent randint (collision possible).
 
-### Protocol 2: Full Source Cut Invariance (path_ablation)
+### Protocol 2: Factor Source Cut Invariance (factor_source_cut)
 
 ```
 Goal: verify that cutting factor path i removes all direct influence of factor i
+       using the ONLY mode that guarantees Path Non-Interference Theorem
 
 For each factor i:
     spec_cut = InterventionSpec(
-        mode="path_ablation",
-        output_gates=[..., 0 at position i, ...]
+        mode="factor_source_cut"
     )
     x_ablate = sample(model, f, trace, intervention=spec_cut)
 
     For all v_new ≠ f[i]:
         f' = f.copy(); f'[i] = v_new
         spec_cut_2 = InterventionSpec(
-            mode="path_ablation",
-            output_gates=[..., 0 at i, ...]
+            mode="factor_source_cut"
         )
         x_ablate_alt = sample(model, f', trace, intervention=spec_cut_2)
 
@@ -254,7 +253,7 @@ For each factor i:
     # Cutting a path should change the output (unless the path was already dead)
 ```
 
-### Protocol 3: Neural Graph Surgery (graph_surgery)
+### Protocol 3: Neural Graph Surgery (neural_graph_surgery)
 
 ```
 Goal: test whether incoming-edge cut + factor edit respects graph semantics
@@ -262,7 +261,7 @@ Goal: test whether incoming-edge cut + factor edit respects graph semantics
 For DAG G = (V, E) where V = {0..K-1}:
     For each factor i:
         spec_gs = InterventionSpec(
-            mode="graph_surgery",
+            mode="neural_graph_surgery",
             edited_factors={i: v_new},
             incoming_cut={i}       # cut all edges INTO i
         )
@@ -280,8 +279,8 @@ For DAG G = (V, E) where V = {0..K-1}:
         for j in non_desc:
             leakage_surgery[i,j] = P[Oracle_j(x_surgery) != Oracle_j(x_orig)]
 
-Compare: graph_surgery leakage vs factor_edit leakage.
-Prediction: graph_surgery has LOWER leakage on non-descendants.
+Compare: neural_graph_surgery leakage vs factor_edit leakage.
+Prediction: neural_graph_surgery has LOWER leakage on non-descendants.
 ```
 
 ## Metrics
@@ -391,7 +390,7 @@ Failure: model ignores factor embedding → path specialization not meaningful
 |-------|-------|-----------------|
 | Correct | Ground-truth edges (Causal3DIdent SCM) | Lowest non-descendant leakage |
 | Empty | No edges (all factors independent) | Higher leakage (missing parent→child pathways) |
-| Complete | All (j,i) for j≠i | Highest leakage or worst (spurious edges cause interference) |
+| DENSE_DIRECTED (all j≠i) | All (j,i) for j≠i | Highest leakage or worst (spurious edges cause interference) |
 | Reversed | All (i,j) where (j,i) in correct graph | Higher leakage than correct, potentially worse than empty |
 | Random | Random DAG with same edge density | Intermediate leakage |
 
@@ -408,11 +407,12 @@ MUST FAIL: assertion error at InterventionSpec construction
 | Term | Use Case |
 |------|----------|
 | paired-noise evaluation | Standard term for shared NoiseTrace comparison |
-| counterfactual | Allowed ONLY in limited sense: "same exogenous randomness, different factor condition" |
-| causal / do-operator | NOT used unless SCM equivalence proven (L4 claim only) |
+| common-random-number coupling | Alternative term for paired-noise evaluation |
+| counterfactual | NOT used outside literature/future-work contexts |
+| causal / do-operator | BANNED unless SCM equivalence proven (L4 claim only) |
 | factor edit | Preferred over "counterfactual edit" |
-| path cut / ablation | Preferred over "causal ablation" |
+| factor_source_cut / ablation | Preferred over "causal ablation" |
 | leakage | Preferred over "causal effect" |
-| graph surgery | Preferred over "do-intervention" |
+| neural_graph_surgery | Preferred over "do-intervention" or "graph surgery" |
 
 Never use "disentanglement" — FGR does not produce disentangled representations; it produces factor-specific computational paths with verifiable non-interference. These are distinct concepts.

@@ -16,7 +16,7 @@
 
 | T-08 | **observational baseline**: No intervention → output matches normal forward |
 | T-09 | **direct_output_ablation**: o_i=0 → P_i·Norm_i(h_i) contribution = 0 (verified by direct measurement) |
-| T-10 | **full_source_cut invariance**: All o_j=0 + all r_{*→j}=0 for paths from e_i → output invariant to f_i change |
+| T-10 | **factor_source_cut invariance**: All pathways from e_i to output are cut → output invariant to f_i change (Path Non-Interference Theorem) |
 | T-11 | **outgoing_edge_preserve**: incoming_cut on node i, outgoing_preserve on node i → descendants at child k receive message from i |
 | T-12 | **node_deletion zero output**: o_i=0 + r_{*→i}=0 + r_{i→*}=0 → node i absent from computation |
 | T-13 | **edge_ablation specificity**: Cut single edge j→i → other edges j→k still functional |
@@ -26,9 +26,9 @@
 
 ## Path Invariance Tests
 
-| T-17 | **Denoiser invariance under full_source_cut**: Same x_t, full_source_cut on i, f_i changed → |ε - ε'| < tolerance |
-| T-18 | **Trajectory invariance DDIM**: Same x_T, DDIM η=0, full_source_cut on i → identical final sample |
-| T-19 | **Trajectory invariance DDPM**: Same x_T + same counter-seed per step, full_source_cut on i → identical sample |
+| T-17 | **Denoiser invariance under factor_source_cut**: Same x_t, factor_source_cut on i, f_i changed → |ε - ε'| < tolerance |
+| T-18 | **Trajectory invariance DDIM**: Same x_T, DDIM η=0, factor_source_cut on i → identical final sample |
+| T-19 | **Trajectory invariance DDPM**: Same x_T + same counter-seed per step, factor_source_cut on i → identical sample |
 | T-20 | **NoiseTrace identity DDIM**: Same model + condition + DDIM NoiseTrace → exact output match |
 | T-21 | **NoiseTrace identity DDPM**: Same model + condition + DDPM counter-seed trace → exact output match |
 | T-22 | **Independent noise NOT identical**: Different NoiseTrace → different outputs (confirms randomness coupling works) |
@@ -64,7 +64,7 @@
 ## Acceptance Criteria Before GPU Training
 
 1. All 38 tests pass
-2. Path invariance (full_source_cut): max |ε(f_i) - ε(f_i')| < 1e-5 (fp32), < 1e-3 (fp16/bf16)
+2. Path invariance (factor_source_cut): max |ε(f_i) - ε(f_i')| < 1e-5 (fp32), < 1e-3 (fp16/bf16)
 3. Trajectory invariance (DDIM): max |X_0(f_i) - X_0(f_i')| < 1e-4 (fp32)
 4. NoiseTrace identity: max |X_0 - X_0'| < 1e-6 (fp32)
 5. Checkpoint roundtrip: load(save(model)) produces identical output

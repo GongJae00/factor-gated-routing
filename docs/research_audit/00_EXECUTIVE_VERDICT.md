@@ -10,7 +10,7 @@
 
 ### 1. Research Direction: CONDITIONAL GO
 
-The core idea — decomposing diffusion denoising into explicit factor-specific computational paths with verifiable non-interference — has genuine research value. But c6cc096 does not implement or evaluate this idea correctly. The required pivot transforms the contribution from "causal do-operator diffusion" (indefensible) to "graph-surgical factor-path routing with mechanistic audit" (defensible with evidence).
+The core idea — decomposing diffusion denoising into explicit factor-specific computational paths with verifiable non-interference — has genuine research value. But c6cc096 does not implement or evaluate this idea correctly. The required pivot transforms the contribution from "causal do-operator diffusion" (indefensible) to "factor-path routing with mechanistic audit" (defensible with evidence).
 
 ### 2. Audit Completeness: COMPLETE (v2 at aa14213)
 
@@ -46,7 +46,7 @@ Blocked by: specification gate (intervention semantics, graph types, metric defi
 
 ## Recommended Primary Direction
 
-Candidate B: Shared factor-agnostic trunk + factor-specific adapters with edge-gated message passing. Fallback: Candidate A (fully independent additive streams).
+Primary: ROST-FRG (Read-Only Shared Trunk + Factor Residual Graph) — a shared factor-agnostic trunk with per-factor adapter branches. Trunk is read-only to branches. No branch writes back to trunk. Per-branch output heads. Fallback: Candidate A (fully independent additive streams).
 
 ## Implementation Gate
 

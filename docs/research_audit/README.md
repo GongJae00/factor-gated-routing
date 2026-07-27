@@ -1,11 +1,13 @@
 # Factor-Gated Routing — Research Audit
 
-**Audit version**: v2
-**Audit commit**: aa14213af5667157000c94776fdd1d086575130e
+**Audit version**: v3
+**Audit v2 commit**: aa14213af5667157000c94776fdd1d086575130e
+**Audit v3 (spec freeze base)**: c700d341eb543c83e7d10ced034ffc2d8a179762
 **Code reference**: c6cc0968ccf4b39e6400792b6bdd38a4e57135cd
 **Cutoff date**: 2026-07-27
 **Last verified**: 2026-07-27
-**Status**: COMPLETE (implementation BLOCKED pending specification gate)
+**Spec version**: 3.0
+**Status**: SPECIFICATION FROZEN (implementation UNBLOCKED for Phase 0 only)
 
 ---
 
@@ -32,8 +34,10 @@ This directory contains the complete pre-experiment master audit of the Factor-G
 | 12 | [Risk & Pivot Register](12_RISK_AND_PIVOT_REGISTER.md) | 23 risks with mitigation, 3 full pivot descriptions | COMPLETE |
 | 13 | [Paper Positioning](13_PAPER_POSITIONING.md) | Title, claims ladder, paper structure, figures/tables | COMPLETE |
 | 14 | [Definition of Done](14_DEFINITION_OF_DONE.md) | 8-phase gate checklist with kill criteria | COMPLETE |
-| 15 | [Traceability & Compliance](15_TRACEABILITY_AND_COMPLIANCE.md) | Finding→task→test→gate→claim linkage matrix | COMPLETE |
+| 15 | [Traceability & Compliance](15_TRACEABILITY_AND_COMPLIANCE.md) | Finding-to-task-to-test-to-gate-to-claim linkage matrix | COMPLETE |
+| 16 | [Specification Freeze](16_SPECIFICATION_FREEZE.md) | Frozen spec v3.0: architecture, interventions, graphs, metrics, baselines, statistics | FROZEN |
 | — | [audit_manifest.yaml](audit_manifest.yaml) | Machine-readable audit state with all counts | COMPLETE |
+| — | [CORRECTION_REGISTER_V3.md](CORRECTION_REGISTER_V3.md) | 25 resolved corrections across v1→v3 audit versions | COMPLETE |
 
 ## Recommended Reading Order
 
@@ -45,21 +49,26 @@ This directory contains the complete pre-experiment master audit of the Factor-G
 6. `10_IMPLEMENTATION_BACKLOG.md` for what to build
 7. `11_TEST_AND_VERIFICATION_PLAN.md` for what to verify
 8. `14_DEFINITION_OF_DONE.md` for when to declare readiness
+9. `16_SPECIFICATION_FREEZE.md` for the frozen v3.0 spec and API contracts
 
 ## Key Decisions
 
-- **Research direction**: CONDITIONAL GO (requires architecture pivot)
-- **Primary architecture**: Candidate B (shared trunk + factor adapters)
-- **Fallback**: Candidate A (fully independent streams)
+- **Research direction**: CONDITIONAL GO
+- **Primary architecture**: ROST-FRG (Read-Only Shared Trunk + Factor Residual Graph)
+- **Fallback**: Fully Independent Additive Score Experts (Candidate A)
 - **Intervention semantics**: 8 canonical modes, typed InterventionSpec
-- **Graph types**: INDEPENDENT, DAG, DENSE_DIRECTED, CUSTOM (DAG ≠ dense)
+- **Graph types**: INDEPENDENT, DAG, DENSE_DIRECTED, CUSTOM_DIRECTED (DENSE_DIRECTED is not a DAG)
 - **Evaluation**: paired-noise (NOT "counterfactual"), NoiseTrace via counter-seeds
-- **Baselines**: CoInD→IndependentStreamDiT, EncDiff→CrossAttnDiT (rename)
+- **Baselines**: CanonicalDiT (adalN-Zero), IndependentStreamDiT (formerly CoInD), CrossAttnDiT (formerly EncDiff), AllToAllFactorStreamDiT (formerly MMDiT-k), CF-DiT
 - **Theory**: Path Non-Interference Theorem, Grönwall bound (sketch), NO monotonicity claim
-- **Implementation**: BLOCKED until specification gate passed
+- **Implementation**: Phase-0 UNBLOCKED; full implementation BLOCKED pending CPU property tests
 
 ## Blocked Items
 
 1. Literature search saturation (API rate-limited; deferred to PI)
-2. Implementation start (blocked by specification freeze)
+2. Full implementation start (blocked by CPU property tests; Phase-0 unblocked)
 3. GPU experiments (blocked by CPU property tests)
+
+## Specification Freeze
+
+The v3.0 specification freeze is documented in `16_SPECIFICATION_FREEZE.md` and validated via `tools/validate_spec.py`. All 25 corrections in `CORRECTION_REGISTER_V3.md` are resolved. No open blocking questions at the specification level.

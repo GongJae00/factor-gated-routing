@@ -21,7 +21,7 @@
 
 - [ ] All 38 tests pass (see test plan v2)
 - [ ] Graph validation: cycle/invalid/duplicate/self-loop all catch errors
-- [ ] full_source_cut invariance: denoiser level < 1e-5 (fp32)
+- [ ] factor_source_cut invariance: denoiser level < 1e-5 (fp32)
 - [ ] direct_output_ablation: o_i=0 → contribution measured as zero
 - [ ] outgoing preserve: cut incoming, preserve outgoing → child receives message
 - [ ] NoiseTrace identity: same inputs → exact output match
@@ -32,7 +32,7 @@
 
 - [ ] Pre-generate N=16 fixed (x0, t, noise, condition) tuples
 - [ ] Model memorizes tuples (loss → near 0)
-- [ ] full_source_cut invariance verified on overfit model
+- [ ] factor_source_cut invariance verified on overfit model
 - [ ] neural_graph_surgery semantics verified (incoming cut + v' inject + outgoing preserve)
 
 ## Gate 4: Stochastic Sanity (~1h GPU)

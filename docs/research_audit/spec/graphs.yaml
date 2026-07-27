@@ -1,0 +1,173 @@
+spec_version: "3.0"
+
+graph_types:
+  - name: "INDEPENDENT"
+    edges: []
+    edge_count: 0
+    cycles: "N/A (no edges)"
+    is_dag: true
+    is_dense: false
+    validation:
+      - "none needed (empty edge set is always valid)"
+    requires_synchronous_update: false
+    requires_synchronous_update_rationale: >
+      With no edges, branches are fully independent.
+      No snapshot freezing needed; branches can update in any order.
+    use_case: "Baseline. Factor branches read trunk independently. No inter-factor communication."
+
+  - name: "DAG"
+    edges: "explicit list, user-provided as list[tuple[int,int]]"
+    edge_count: "|E| provided by user"
+    cycles: "FORBIDDEN"
+    is_dag: true
+    is_dense: false
+    validation:
+      - "topological sort (for reporting and validation only, NOT for forward execution order)"
+      - "cycle detection (DFS-based, raises ValidationError if cycle found)"
+      - "node range check: all node indices must be in [0, K-1]"
+      - "duplicate edge check: multi-edges between same (parent, child) pair forbidden"
+      - "self-loop FORBIDDEN: edges with parent == child rejected"
+    forward_execution: "synchronous snapshot update (NOT sequential per topological order)"
+    forward_execution_rationale: >
+      Even though a topological order exists for DAGs, forward execution
+      uses synchronous snapshot updates for consistency with all graph types
+      and to avoid implementation complexity. The frozen snapshot from
+      layer l-1 is used for all branches at layer l.
+    node_numbering: "arbitrary, independent of topological order"
+    validation_cli_hint: "validate_graph --type DAG --edges '[(0,1),(1,2)]'"
+    use_case: "Causal hypothesis testing. Edges encode hypothesized causal direction."
+
+  - name: "DENSE_DIRECTED"
+    edges: "all ordered pairs (j,i) where j != i"
+    edge_count_formula: "K * (K-1)"
+    cycles: "2-cycles exist when K > 1 (e.g., (0,1) and (1,0))"
+    is_dag: false
+    is_dense: true
+    validation:
+      - "node range check only (edges auto-generated, no user-provided list)"
+      - "verify K >= 2 for meaningful dense graph"
+    requires_synchronous_update: true
+    requires_synchronous_update_rationale: >
+      Dense directed graphs contain 2-cycles, so topological order does
+      not exist. Synchronous snapshot updates are required.
+    use_case: "Maximal connectivity. Every factor can influence every other factor."
+    note: >
+      DENSE_DIRECTED is NOT a DAG. The phrase 'complete DAG' is forbidden
+      in documentation and code comments.
+
+  - name: "CUSTOM_DIRECTED"
+    edges: "explicit list, user-provided as list[tuple[int,int]]"
+    edge_count: "|E| provided by user"
+    cycles: "allowed by default"
+    allow_cycles: true
+    is_dag: false
+    is_dense: false
+    validation:
+      - "node range check: all node indices must be in [0, K-1]"
+      - "duplicate edge check: multi-edges between same (parent, child) pair forbidden"
+      - "self-loop policy: default FORBIDDEN; configurable via allow_self_loops flag"
+    requires_synchronous_update: true
+    use_case: "Arbitrary relational structure. User specifies exact connectivity."
+
+edge_key_format: "tuple[layer, parent, child]"
+edge_key_example: "(2, 0, 3)  # layer 2, message from factor 0 to factor 3"
+
+forbidden_phrases:
+  - phrase: "complete DAG"
+    reason: "DENSE_DIRECTED is NOT a DAG. Use 'dense directed' or 'DENSE_DIRECTED'."
+    severity: "error"
+  - phrase: "fully connected DAG"
+    reason: "Same as 'complete DAG'. DAG and full connectivity with K>1 are mutually exclusive."
+    severity: "error"
+  - phrase: "graph connection"
+    reason: "Ambiguous. Use 'edge routing' or 'inter-branch message passing'."
+    severity: "warning"
+
+node_id_semantics:
+  format: "int in [0, K-1]"
+  mapping: "node_id i corresponds to factor i with encoder Enc_i and head FactorHead_i"
+  zero_indexed: true
+
+path_certificate:
+  description: >
+    Static analysis of factor-source-to-output path reachability.
+    Used to verify that interventions (especially FACTOR_SOURCE_CUT)
+    achieve the intended path isolation.
+  functions:
+    - name: "verify_factor_source_cut"
+      signature: "verify_factor_source_cut(spec: GraphSpec, factor_idx: int) -> bool"
+      returns: "True iff all paths from factor i to ANY output are cut"
+      description: >
+        Checks that setting source_gate_i=0 removes all reachable output
+        contributions from factor i's encoded value. Uses static path analysis.
+
+    - name: "list_uncovered_paths"
+      signature: "list_uncovered_paths(spec: GraphSpec, factor_idx: int) -> list[Path]"
+      returns: "list of Path objects representing factor-source-to-output paths not covered by edge gates"
+      description: >
+        For a given intervention, enumerates all factor-source-to-output
+        paths in the graph that are NOT fully gated to zero.
+
+    - name: "get_reachable_outputs"
+      signature: "get_reachable_outputs(factor_idx: int, graph: GraphSpec, intervention: CompiledIntervention) -> set[int]"
+      returns: "set of output head indices reachable from factor i under the given intervention"
+      description: >
+        Computes the set of output heads that are reachable via at least one
+        ungated path from factor i's source encoder.
+
+    - name: "compute_path_matrix"
+      signature: "compute_path_matrix(graph: GraphSpec) -> torch.Tensor"
+      returns: "[K, K] boolean matrix; entry [j,i] is True if a directed path exists from j to i"
+      description: >
+        Transitive closure of the directed graph. Used as a fast lookup for
+        reachability queries.
+
+    - name: "validate_graph"
+      signature: "validate_graph(graph: GraphSpec) -> ValidationResult"
+      returns: "ValidationResult with is_valid, errors, warnings"
+      description: >
+        Runs all applicable validation checks for the graph type.
+        Returns structured result with specific error messages.
+
+algorithm_details:
+  cycle_detection:
+    method: "DFS with recursion stack coloring (white/gray/black)"
+    complexity: "O(K + |E|)"
+    error_message: "Cycle detected involving nodes: [...]"
+
+  transitive_closure:
+    method: "Floyd-Warshall"
+    complexity: "O(K^3)"
+    note: "K is small (≤ 20 typical, ≤ 100 max), so O(K^3) is acceptable"
+    alternative: "DFS from each node: O(K * (K + |E|))"
+
+  topological_sort:
+    method: "Kahn's algorithm (BFS-based)"
+    complexity: "O(K + |E|)"
+    note: "Used for validation and reporting only; NOT used for forward execution order"
+
+graph_spec_dataclass:
+  fields:
+    - name: "graph_type"
+      type: "GraphType"
+      values: "[INDEPENDENT, DAG, DENSE_DIRECTED, CUSTOM_DIRECTED]"
+
+    - name: "num_nodes"
+      type: "int"
+      description: "Number of factor nodes = K"
+
+    - name: "edges"
+      type: "list[tuple[int,int]]"
+      description: >
+        List of (parent, child) directed edges. parent sends message to child.
+        Empty for INDEPENDENT. Auto-generated for DENSE_DIRECTED.
+
+    - name: "allow_cycles"
+      type: "bool"
+      default: "false"
+      description: "Used only for CUSTOM_DIRECTED. Set to true to allow cycles."
+
+    - name: "allow_self_loops"
+      type: "bool"
+      default: "false"
+      description: "Used only for CUSTOM_DIRECTED."

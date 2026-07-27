@@ -1,0 +1,216 @@
+spec_version: "3.0"
+
+# =============================================================================
+# Commits
+# =============================================================================
+
+code_reference_commit: "c6cc0968ccf4b39e6400792b6bdd38a4e57135cd"
+code_reference_commit_description: >
+  Baseline commit of the Factor-Path Diffusion codebase against which
+  the architecture audit was performed. All forensic analysis in
+  docs/research_audit/ references this commit as the implementation
+  ground truth.
+
+audit_v1_commit: "aa14213af5667157000c94776fdd1d086575130e"
+audit_v1_commit_description: >
+  First-pass architecture audit. Identified structural issues:
+  ambiguous intervention naming, missing static path verification,
+  branch-to-trunk write not formally forbidden.
+
+audit_v2_commit: "c700d341eb543c83e7d10ced034ffc2d8a179762"
+audit_v2_commit_description: >
+  Second-pass audit with corrected intervention taxonomy, PathCertificate
+  specification, and formal architecture constraints.
+
+spec_freeze_base_commit: "c700d341eb543c83e7d10ced034ffc2d8a179762"
+spec_freeze_base_commit_description: >
+  The commit on top of which the spec freeze is applied. All spec files
+  in docs/research_audit/spec/ are considered authoritative from this
+  commit onward, subject to the freeze commit below.
+
+spec_freeze_commit: null
+spec_freeze_commit_description: >
+  Set to the commit hash once specification freeze is formally approved.
+  Null indicates freeze has not yet been applied. After freeze, any
+  change to files under docs/research_audit/spec/ requires a spec
+  amendment proposal (SAP) and ledger entry.
+
+spec_freeze_commit_reporting_policy: >
+  Reported in final agent response; not self-embedded in the same commit.
+  The freeze commit hash is communicated externally (in the PR description,
+  agent conversation, or project ledger) rather than being baked into
+  the frozen spec files themselves. This prevents circular dependencies
+  where the frozen spec would need to predict its own commit hash.
+
+cutoff_date: "2026-07-27"
+cutoff_date_description: >
+  The date after which new research directions, architecture changes,
+  or metric additions require a formal proposal. All current spec
+  content has been audited and frozen as of this date. Post-cutoff
+  changes must be tracked in the project ledger under
+  ~/research/private-projects/factor-gated-routing/ledgers/.
+
+# =============================================================================
+# Repository Structure (Audited)
+# =============================================================================
+
+repository_structure:
+  root: "/home/gongjae/projects/research/factor-gated-routing"
+  key_directories:
+    - path: "src/"
+      description: "Core implementation (models, training, inference)"
+    - path: "docs/research_audit/"
+      description: "Audit artifacts: architecture analysis, intervention audit, metric definitions"
+    - path: "docs/research_audit/spec/"
+      description: "Canonical specification files (this directory)"
+    - path: "docs/research_audit/original_audit_conversation.md"
+      description: "Raw audit conversation log from v1 audit"
+    - path: "docs/research_audit/FINAL_AUDIT_DOCUMENT.md"
+      description: "Final synthesized audit report"
+    - path: "docs/research_audit/INTERVENTION_AUDIT.md"
+      description: "Detailed intervention mode audit"
+    - path: "docs/research_audit/AUDIT_REVIEW_METRIC_DEFINITIONS.md"
+      description: "Original metric definitions (superseded by spec/metrics.yaml)"
+  spec_files:
+    - "ARCHITECTURE_SPEC.md"
+    - "INTERVENTION_SPEC.md"
+    - "architecture.yaml"
+    - "graphs.yaml"
+    - "metrics.yaml"
+    - "provenance.yaml"
+    - "status.yaml"
+
+# =============================================================================
+# External Dependencies
+# =============================================================================
+
+external_dependencies:
+  - name: "research-codex-config"
+    path: "~/research/"
+    purpose: "Workstation framework, automation scripts, quality contracts"
+
+  - name: "private-project-ledger"
+    path: "~/research/private-projects/factor-gated-routing/"
+    purpose: "Private project state: ledgers, PaperOrchestra workspace, Zotero links"
+
+  - name: "zotero-library"
+    path: "~/Zotero/"
+    purpose: "Reference management for literature review"
+
+# =============================================================================
+# Audit Methodology
+# =============================================================================
+
+audit_methodology:
+  code_forensics:
+    tool: "manual code review + automated grep patterns"
+    scope: "all *.py files under src/, all config *.yaml files"
+    checks:
+      - "InterventionMode enum completeness (8 modes)"
+      - "Gate tensor usage consistency"
+      - "Branch-to-trunk write detection (no assignment to trunk from branch files)"
+      - "PathCertificate implementation existence"
+      - "FactorAdapter input signature correctness"
+
+  literature_validation:
+    status: "BLOCKED"
+    reason: >
+      Literature search for related factor-graph diffusion architectures
+      has not been completed. Requires Semantic Scholar + Crossref
+      verification pass before literature_validation can move to VERIFIED.
+
+  cross_document_consistency:
+    status: "FAILED"
+    failed_checks:
+      - "ARCHITECTURE_SPEC.md vs architecture.yaml: parameter count discrepancies"
+      - "INTERVENTION_SPEC.md vs code: stale names used in test files"
+      - "metrics.yaml vs AUDIT_REVIEW_METRIC_DEFINITIONS.md: duplicate definitions"
+    resolution: >
+      Spec files created as part of v3.0 spec freeze. Cross-document
+      consistency must be re-verified after all spec files are written
+      and stale references in code are removed.
+
+  specification_freeze:
+    status: "FAILED"
+    reason: "spec_freeze_commit is null; formal freeze not yet executed"
+    next_step: >
+      Run research-check --spec-freeze . to validate all spec files,
+      resolve cross-document inconsistencies, and set spec_freeze_commit.
+
+# =============================================================================
+# Spec File Provenance
+# =============================================================================
+
+file_provenance:
+  ARCHITECTURE_SPEC.md:
+    based_on: "docs/research_audit/FINAL_AUDIT_DOCUMENT.md (architecture section)"
+    spec_version: "3.0"
+    last_updated: "2026-07-27"
+    status: "NEW (supersedes ad-hoc architecture descriptions in audit docs)"
+
+  INTERVENTION_SPEC.md:
+    based_on: "docs/research_audit/INTERVENTION_AUDIT.md"
+    spec_version: "3.0"
+    last_updated: "2026-07-27"
+    status: "NEW (canonical source of truth for InterventionMode)"
+
+  architecture.yaml:
+    based_on: "ARCHITECTURE_SPEC.md + original code configs"
+    spec_version: "3.0"
+    last_updated: "2026-07-27"
+    status: "NEW (machine-readable architecture spec)"
+
+  graphs.yaml:
+    based_on: "ARCHITECTURE_SPEC.md + code graph types"
+    spec_version: "3.0"
+    last_updated: "2026-07-27"
+    status: "NEW (canonical graph type definitions)"
+
+  metrics.yaml:
+    based_on: "docs/research_audit/AUDIT_REVIEW_METRIC_DEFINITIONS.md"
+    spec_version: "3.0"
+    last_updated: "2026-07-27"
+    status: "NEW (supersedes AUDIT_REVIEW_METRIC_DEFINITIONS.md)"
+
+  provenance.yaml:
+    based_on: "git log + audit documents"
+    spec_version: "3.0"
+    last_updated: "2026-07-27"
+    status: "NEW (this file)"
+
+  status.yaml:
+    based_on: "audit findings"
+    spec_version: "3.0"
+    last_updated: "2026-07-27"
+    status: "NEW (research stage dashboard)"
+
+# =============================================================================
+# Version History
+# =============================================================================
+
+version_history:
+  - version: "3.0"
+    date: "2026-07-27"
+    changes:
+      - "Created canonical spec directory structure"
+      - "Formalized 8 intervention modes with pairwise distinctness proof"
+      - "Defined PathCertificate static auditing"
+      - "Created machine-readable architecture.yaml and graphs.yaml"
+      - "Defined all categorical and continuous metrics in metrics.yaml"
+      - "Enforced stale name deprecation"
+    supersedes: "v1 audit + v2 audit documents (informal)"
+
+  - version: "2.0"
+    date: "audit_v2"
+    commit: "c700d341eb543c83e7d10ced034ffc2d8a179762"
+    changes:
+      - "Corrected intervention taxonomy"
+      - "Added PathCertificate concept"
+      - "Formal architecture constraints"
+
+  - version: "1.0"
+    date: "audit_v1"
+    commit: "aa14213af5667157000c94776fdd1d086575130e"
+    changes:
+      - "Initial architecture audit"
+      - "Identified structural issues"

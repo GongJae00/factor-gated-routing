@@ -1,0 +1,141 @@
+spec_version: "3.0"
+architecture_name: "ROST-FRG"
+architecture_full_name: "Read-Only Shared Trunk + Factor Residual Graph"
+description: >
+  Shared factor-agnostic trunk with per-factor read-only branch adapters,
+  typed edge-gated inter-branch communication, and per-branch independent
+  output heads. Branches can read trunk but cannot write back. Inter-branch
+  communication is explicit and auditable. Factor-source-to-output paths
+  are statically verifiable.
+
+primary: true
+fallback_architecture: "Fully Independent Additive Score Experts"
+canonical_spec_md: "docs/research_audit/spec/ARCHITECTURE_SPEC.md"
+
+trunk:
+  read_only_to_branches: true
+  branch_write_to_trunk: "FORBIDDEN"
+  default_dim: 512
+  num_blocks_formula: "max(12, K * 4)"
+  num_blocks_formula_description: >
+    Minimum 12 blocks; scales linearly with factor count K at 4 blocks per factor.
+    12 for dSprites (K=3-5), 24 for 3DShapes (K=6).
+  block_type: "DiTBlock with adaLN-Zero"
+  block_components:
+    - self_attention
+    - cross_attention_to_time
+    - adaln_zero_modulation
+    - feedforward
+
+branches:
+  factor_branch_count_rule: "equals K (one branch per factor)"
+  branch_dim: 256
+  branch_dim_constraint: "≤ trunk_dim"
+  adapter_type: "FactorAdapter"
+  adapter_core_params_shared: false
+  adapter_core_params_description: >
+    Each factor branch has its own independent adapter parameters.
+    Parameter sharing would violate the factor-specific modeling requirement
+    and conflate factor-source path attribution.
+  adapter_layers_per_trunk_block: 1
+  adapter_mlp_depth: 2
+  adapter_inputs:
+    - trunk_read: "z^(l) (read-only)"
+    - previous_state: "a_i^(l-1)"
+    - factor_source: "source_gate_i * Enc_i(f_i)"
+    - parent_message: "Aggregate({m_{j→i}^l})"
+    - time_embedding: "t"
+  branch_to_trunk_write: "FORBIDDEN"
+  branch_to_trunk_write_rationale: >
+    Prevents information leakage from factor-specific representations back
+    into the shared representation, which would violate factor-source path
+    attribution and break the static auditability guarantee.
+  branch_to_branch: "only via explicit edge messages (parent_message)"
+  branch_initialization:
+    type: "FactorInit"
+    inputs:
+      - trunk_initial: "z^(0)"
+      - encoded_factor: "Enc_i(f_i)"
+      - time_embedding: "t"
+
+edge_routing:
+  message_module: "shared per layer, conditioned on (parent, child) edge key"
+  message_module_sharing_rationale: >
+    Single Message module per layer, shared across all edges.
+    Edge identity is injected as conditioning (learnable edge_key embedding).
+    This reduces parameter count while allowing edge-specific behavior.
+  aggregation: "degree-normalized sum"
+  aggregation_formula: "Aggregate({m_j}) = (1/|in_neighbors(i)|) * sum_j m_j"
+  aggregation_alternatives:
+    - "mean (equal to degree-normalized sum)"
+    - "sum (no normalization)"
+    - "max"
+    - "attention-weighted"
+  edge_gate_type: "per-edge scalar ∈ [0,1]"
+  edge_gate_default: 0.5
+  edge_key_type: "tuple[int, int, int]"
+  edge_key_fields:
+    - layer: "int (0-based layer index)"
+    - parent: "int (factor index of source)"
+    - child: "int (factor index of target)"
+  self_loop_policy: "FORBIDDEN"
+  self_loop_rationale: >
+    Self-loops are redundant because each branch already has access to its
+    own previous state via the `previous` input to FactorAdapter.
+
+output:
+  base_head:
+    type: "separate, factor-agnostic"
+    input: "Norm_base(z^L)"
+    init: "standard xavier uniform"
+  factor_heads:
+    type: "one per factor, independent"
+    count: "K"
+    input: "Norm_i(a_i^L)"
+    init: "zero-initialized"
+    zero_init_rationale: >
+      At initialization, all factor contributions are zero, so the model
+      behaves as a standard trunk-only denoiser. Factor heads learn to
+      contribute additive corrections during training.
+  aggregation:
+    type: "additive sum in epsilon space"
+    formula: "epsilon_hat = epsilon_base + sum_i output_gate_i * epsilon_i"
+  output_dim: "matches input noise dimension (e.g., 3 for RGB images)"
+
+graph_types:
+  - INDEPENDENT
+  - DAG
+  - DENSE_DIRECTED
+  - CUSTOM_DIRECTED
+
+graph_type_default: "INDEPENDENT"
+
+intervention_modes: 8
+canonical_intervention_md: "docs/research_audit/spec/INTERVENTION_SPEC.md"
+
+permutation_equivariance:
+  holds: true
+  condition: >
+    Factor numbering permutation + embedding permutation + edge list
+    permutation yields identical epsilon_hat output.
+  proof_sketch: >
+    All operations are either per-factor (encoders, adapters, heads) or
+    commutative over unordered sets (sum-based edge aggregation).
+
+parameter_count_formula:
+  trunk_fixed: "L_trunk * (12 * trunk_dim^2) approx"
+  per_factor: "L_branch * (adapter_depth * branch_dim^2 + branch_dim * trunk_dim) approx"
+  per_edge: "branch_dim^2 (shared Message module per layer)"
+  total: "trunk_fixed + K * per_factor + |E| * per_edge"
+
+flops_formula: "O(L_trunk * trunk_dim^2 + K * L_branch * branch_dim^2 + |E| * branch_dim^2)"
+
+training_defaults:
+  optimizer: "AdamW"
+  learning_rate: 1e-4
+  weight_decay: 1e-6
+  batch_size: 128
+  noise_schedule: "cosine"
+  diffusion_steps: 1000
+  sampling_steps: 250 (DDIM default)
+  factor_balance_sampling: "stratified per factor"

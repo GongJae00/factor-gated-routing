@@ -2,9 +2,9 @@
 
 ## Recommended Title (pending literature verification)
 
-**Factor-Path Diffusion: Graph-Surgical Routing for Auditable Conditional Generation**
+**Factor-Path Diffusion: Factor-Gated Routing for Auditable Conditional Generation**
 
-Rationale: Drops "Verifiable" (vague), drops "Controllable" (too broad), adds "Graph-Surgical" (precise novelty claim pending literature), "Auditable" (distinct contribution). Title is provisional — final determination after literature saturation.
+Rationale: Drops "Verifiable" (vague), drops "Controllable" (too broad), adds "Factor-Gated" (precise mechanism claim pending literature), "Auditable" (distinct contribution). Title is provisional — final determination after literature saturation.
 
 ## Three-Line Central Claim (safe version)
 
@@ -14,7 +14,7 @@ Rationale: Drops "Verifiable" (vague), drops "Controllable" (too broad), adds "G
 
 ## Three Contributions (hypothesized, not empirically verified)
 
-1. **Architecture**: Factor-path denoiser with typed intervention interface (8 modes: observational, factor_edit, direct_output_ablation, full_source_cut, node_deletion, edge_ablation, neural_graph_surgery, condition_mask).
+1. **Architecture**: Factor-path denoiser with typed intervention interface (8 modes: observational, factor_edit, condition_mask, direct_output_ablation, edge_ablation, node_deletion, factor_source_cut, neural_graph_surgery).
 
 2. **Theory**: Path Non-Interference Theorem — if all directed paths from factor embedding e_i to denoiser output pass through a complete cutset, then output is functionally invariant to e_i when cut. Trajectory-level induction for shared-noise sampling. Grönwall-based sensitivity bound (unverified proof sketch).
 
@@ -28,7 +28,7 @@ Rationale: Drops "Verifiable" (vague), drops "Controllable" (too broad), adds "G
 | L1 | Full source cut → exact functional invariance | Theorem + finite-diff test + trajectory induction | Requires architecture redesign |
 | L2 | FGR off-target leakage ≤ monolithic baseline | Paired evaluation + OffTargetChange matrix | Hypothesis — not tested |
 | L3 | Correct graph routing reduces leakage vs wrong graph | Causal3DIdent (known-SCM) benchmark | Hypothesis — not tested |
-| L4 | Neural graph surgery ≈ causal intervention | IIT alignment or SCM proof | **NOT CLAIMED** — future work |
+| L4 | neural_graph_surgery as graph-constrained factor edit | IIT alignment or SCM proof | **NOT CLAIMED** — future work |
 
 **All L2-L3 claims are hypotheses pending experiment.** Current document uses "we hypothesize" and "we will test" language.
 
@@ -36,13 +36,13 @@ Rationale: Drops "Verifiable" (vague), drops "Controllable" (too broad), adds "G
 
 1. **Introduction** (1.5 pages): Problem — monolithic denoisers obscure factor-specific pathways. Solution — explicit computational paths + typed interventions. No causal overclaim.
 
-2. **Related Work** (1 page): Concept bottlenecks, disentangled diffusion, graph-structured diffusion, causal generation. Position FGR as graph-surgical factor-path routing (not causal intervention, not concept bottleneck).
+2. **Related Work** (1 page): Concept bottlenecks, factor-aware diffusion, graph-structured diffusion, causal generation. Position FGR as factor-gated routing with mechanistic audit (not causal intervention, not concept bottleneck).
 
-3. **Problem Formulation** (0.5 pages): Distinguish conditioning from path ablation from graph surgery. Define NoiseTrace-mediated paired evaluation.
+3. **Problem Formulation** (0.5 pages): Distinguish observational conditioning from factor_source_cut from neural_graph_surgery. Define NoiseTrace-mediated common-random-number evaluation.
 
 4. **Architecture** (1.5 pages): Factor streams, base stream, synchronous routing, per-stream projections, InterventionSpec API.
 
-5. **Intervention Semantics** (1 page): 6 intervention modes, typed gates, what each mode guarantees and doesn't guarantee.
+5. **Intervention Semantics** (1 page): 8 intervention modes, typed gates, what each mode guarantees and doesn't guarantee.
 
 6. **Theory** (1 page): Path Non-Interference Theorem + trajectory corollary. NO monotonicity claim. NO sample complexity claim.
 
@@ -57,7 +57,7 @@ Rationale: Drops "Verifiable" (vague), drops "Controllable" (too broad), adds "G
 ## Figures
 
 1. Architecture diagram with base stream + factor streams + edge gates
-2. 3 intervention modes side-by-side (edit, ablation, surgery)
+2. 3 canonical modes side-by-side (factor_edit, factor_source_cut, neural_graph_surgery)
 3. Leakage matrix heatmap (K×K)
 4. Correct vs reversed DAG results
 5. Gate response curves (not monotonicity, but AUC/response shapes)
@@ -65,6 +65,6 @@ Rationale: Drops "Verifiable" (vague), drops "Controllable" (too broad), adds "G
 ## Tables
 
 1. Main results: leakage matrix diagonals + off-diagonals for FGR vs baselines
-2. Graph misspecification: correct/empty/complete/reversed DAG comparison
+2. Graph misspecification: correct/empty/DENSE_DIRECTED/reversed comparison
 3. Ablation: per-stream vs shared LN, base stream contribution
 4. Parameter/FLOP/depth comparison

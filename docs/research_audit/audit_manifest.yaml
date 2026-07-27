@@ -1,9 +1,13 @@
 audit_commit: "aa14213af5667157000c94776fdd1d086575130e"
 code_commit: "c6cc0968ccf4b39e6400792b6bdd38a4e57135cd"
 cutoff_date: "2026-07-27"
-audit_version: "v2"
+audit_version: "v3"
 status: COMPLETE
 implementation_start: BLOCKED
+provenance:
+  corrections: "Canonical terminology freeze: 8 intervention modes, ROST-FRG architecture, 3DShapes size corrected, all stale names replaced"
+  correction_date: "2026-07-27"
+  correction_commit: "c700d34"
 
 documents:
   - path: docs/research_audit/README.md
@@ -69,8 +73,12 @@ implementation_verdict: BLOCKED
 counts:
   documents: 18
   hypotheses_adjudicated: 85
+  hypotheses_verified: 80
+  hypotheses_partially_verified: 2
+  hypotheses_unverified: 3
+  hypotheses_refuted: 0
   findings: 85
-  implementation_tasks: 62
+  implementation_tasks: 61
   tests: 38
   nearest_works: 12
   risks: 23
@@ -85,5 +93,5 @@ blocked_items:
     reason: "Specification gate not passed"
     plan: "Freeze terminology, InterventionSpec, graph types, metrics; then proceed"
 
-primary_architecture: "Candidate B (shared trunk + factor adapters)"
-fallback_architecture: "Candidate A (fully independent additive streams)"
+primary_architecture: "ROST-FRG (Read-Only Shared Trunk + Factor Residual Graph)"
+fallback_architecture: "Fully Independent Additive Score Experts (Candidate A)"

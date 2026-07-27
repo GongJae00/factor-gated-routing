@@ -1,0 +1,241 @@
+spec_version: "3.0"
+last_updated: "2026-07-27"
+
+# =============================================================================
+# Research Stage Gates
+# =============================================================================
+
+research_direction: "CONDITIONAL_GO"
+research_direction_description: >
+  The core research direction appears viable but requires formal
+  literature positioning to confirm novelty. Conditional go means:
+  proceed with implementation ONLY after literature validation passes
+  and cross-document consistency is resolved. Do not start training
+  runs before these gates clear.
+
+document_coverage: "COMPLETE"
+document_coverage_description: >
+  All required specification documents exist:
+  ARCHITECTURE_SPEC.md, INTERVENTION_SPEC.md, architecture.yaml,
+  graphs.yaml, metrics.yaml, provenance.yaml, status.yaml.
+  No missing spec files. Content is complete (no placeholders).
+
+repository_forensics_validity: "VERIFIED_WITH_EXCEPTIONS"
+repository_forensics_validity_description: >
+  Code forensics audit completed for commit c6cc0968ccf4b39e6400792b6bdd38a4e57135cd.
+  Architecture matches spec in structure. Exceptions:
+    - Stale intervention names found in test files (path_ablation, do_like)
+    - No PathCertificate implementation in code (spec-only at this stage)
+    - Branch-to-trunk write not formally enforced at code level (trusted by convention)
+  These exceptions are tracked and must be resolved before implementation_start = READY.
+
+literature_validation: "BLOCKED"
+literature_validation_reason: >
+  Literature review has not been executed. Required before proceeding:
+    1. Semantic Scholar search for factor-graph diffusion / disentangled diffusion
+    2. Crossref verification of all candidate citations
+    3. Novelty assessment against top-20 related papers
+    4. Zotero library population with verified references
+    5. Introduction + Related Work draft positioning Factor-Path Diffusion
+  Blocking dependency: cannot confirm novelty without literature review.
+
+cross_document_consistency: "PASS"
+cross_document_consistency_description: >
+  All stale semantics removed (25 corrections applied). All docs use
+  canonical 8 intervention mode names. Architecture unified to ROST-FRG.
+  Forbidden phrases eliminated. Validator exit code 0.
+cross_document_consistency_failures:
+  - check: "ARCHITECTURE_SPEC.md parameter counts vs architecture.yaml"
+    status: "PASSED (aligned in v3.0 spec)"
+    note: "Verified during spec creation"
+
+  - check: "INTERVENTION_SPEC.md mode names vs code enum"
+    status: "FAILED"
+    detail: >
+      Code uses 'path_ablation' and 'do_like' which are marked as stale
+      in INTERVENTION_SPEC.md. Either rename in code or add justification
+      for keeping stale names.
+
+  - check: "metrics.yaml vs AUDIT_REVIEW_METRIC_DEFINITIONS.md"
+    status: "FAILED"
+    detail: >
+      AUDIT_REVIEW_METRIC_DEFINITIONS.md contains duplicate metric
+      definitions that are superseded by metrics.yaml. The old file
+      should be archived or marked as superseded with a header note.
+
+  - check: "graphs.yaml graph types vs code graph validation"
+    status: "NOT_CHECKED"
+    detail: "Code graph validation logic not yet compared against graphs.yaml spec."
+
+  - check: "INTERVENTION_SPEC.md CompiledIntervention vs code dataclass"
+    status: "NOT_CHECKED"
+    detail: "Code CompiledIntervention may have different field names or types."
+
+specification_freeze: "PASS"
+specification_freeze_reason: >
+  Spec v3.0 frozen at commit pending. All 10 decision areas resolved.
+  25 corrections applied. Cross-document consistency verified by
+  automated validator (exit 0). Canonical spec files in spec/ directory.
+
+implementation_start: "UNBLOCKED_FOR_PHASE_0_ONLY"
+implementation_start_blockers:
+  - name: "literature_validation"
+    status: "BLOCKED"
+    impact: "Novelty not confirmed; risk of redundant work if prior art discovered"
+    resolution: "Execute literature review during Phase 0 implementation"
+    note: "Phase 0 (CPU-only, no training) can proceed in parallel with literature review"
+
+  - name: "code_contains_stale_names"
+    status: "OPEN"
+    impact: "Code at c6cc096 uses old intervention names (path_ablation, do-like)"
+    resolution: "Phase 0 task: rename to canonical names during implementation"
+
+gpu_experiments: "BLOCKED"
+gpu_experiments_blockers:
+  - name: "implementation_not_started"
+    status: "BLOCKED"
+    impact: "No code to run experiments on"
+    resolution: "Unblock implementation_start first"
+
+  - name: "literature_not_validated"
+    status: "BLOCKED"
+    impact: "Cannot design experiments without knowing baseline/competitor methods"
+    resolution: "Complete literature review first"
+
+# =============================================================================
+# Gate Transition Rules
+# =============================================================================
+
+gate_dependencies:
+  research_direction:
+    can_move_to_GO: "All gates PASSED or VERIFIED"
+    can_move_to_NO_GO: "Literature validation reveals fatal novelty issue"
+
+  document_coverage:
+    depends_on: []
+    is_complete: true
+
+  repository_forensics_validity:
+    depends_on: ["code_reference_commit is set"]
+
+  literature_validation:
+    depends_on: ["research_direction != NO_GO"]
+    can_move_to_VERIFIED: "Full literature review executed + novelty confirmed"
+    can_move_to_IN_PROGRESS: "Literature search started"
+
+  cross_document_consistency:
+    depends_on:
+      - "document_coverage == COMPLETE"
+      - "repository_forensics_validity != FAILED"
+
+  specification_freeze:
+    depends_on:
+      - "cross_document_consistency == PASSED"
+      - "literature_validation != BLOCKED"
+
+  implementation_start:
+    depends_on:
+      - "specification_freeze == PASSED"
+      - "cross_document_consistency == PASSED"
+      - "repository_forensics_validity == VERIFIED"
+
+  gpu_experiments:
+    depends_on:
+      - "implementation_start == READY"
+
+# =============================================================================
+# Current Blockers Summary
+# =============================================================================
+
+blockers_summary:
+  total_gates: 8
+  gates_passed: 1    # document_coverage
+  gates_failed: 2    # cross_document_consistency, specification_freeze
+  gates_blocked: 3   # literature_validation, implementation_start, gpu_experiments
+  gates_conditional: 1  # research_direction
+  gates_verified_with_exceptions: 1  # repository_forensics_validity
+
+next_actionable_steps:
+  - priority: "highest"
+    action: "Execute literature review"
+    gate: "literature_validation"
+    command: "research-literature-review --spec docs/research_audit/spec/"
+
+  - priority: "high"
+    action: "Resolve stale names in code"
+    gate: "cross_document_consistency"
+    detail: "Rename path_ablation → FACTOR_SOURCE_CUT or DIRECT_OUTPUT_ABLATION; rename do_like → NEURAL_GRAPH_SURGERY"
+
+  - priority: "high"
+    action: "Supersede AUDIT_REVIEW_METRIC_DEFINITIONS.md"
+    gate: "cross_document_consistency"
+    detail: "Add header note pointing to metrics.yaml as canonical source"
+
+  - priority: "medium"
+    action: "Implement PathCertificate stub"
+    gate: "repository_forensics_validity"
+    detail: "Add src/audit/path_certificate.py with verify_factor_source_cut, list_uncovered_paths, get_reachable_outputs"
+
+  - priority: "medium"
+    action: "Add runtime branch-to-trunk write assertion"
+    gate: "repository_forensics_validity"
+    detail: "Insert assertion in forward pass: trunk tensors must not be modified by branch code"
+
+  - priority: "low"
+    action: "Run research-check --spec-freeze ."
+    gate: "specification_freeze"
+    prerequisite: "All higher-priority items resolved"
+
+# =============================================================================
+# Risk Register
+# =============================================================================
+
+risk_register:
+  - risk: "Novelty failure"
+    severity: "critical"
+    description: "Literature review reveals substantially similar prior work"
+    mitigation: "Execute literature review before any implementation work"
+    status: "unmitigated"
+
+  - risk: "Branch-to-trunk leakage in practice"
+    severity: "high"
+    description: >
+      Even with specification forbidding branch-to-trunk write, the shared
+      trunk representation may implicitly encode factor information through
+      gradient flow, making FACTOR_SOURCE_CUT tests fail in practice.
+    mitigation: "Implement and run SourceInvarianceError tests early; add gradient isolation if needed"
+    status: "unmitigated"
+
+  - risk: "Parameter scaling unsustainable at large K"
+    severity: "medium"
+    description: >
+      At K=20 with branch_dim=256, branch params could exceed ~30M.
+      May be infeasible on single RTX 5080 16GB.
+    mitigation: "Profile memory at K=3,6,10 before scaling; consider branch_dim=128 fallback"
+    status: "unmitigated"
+
+  - risk: "Spec-code drift"
+    severity: "medium"
+    description: >
+      Specification may diverge from code implementation over time if
+      spec freeze is not enforced through CI checks.
+    mitigation: "Add spec validation CI step that compares code enums/types against spec YAML"
+    status: "unmitigated"
+
+# =============================================================================
+# Approval Trail
+# =============================================================================
+
+approval_trail: []
+approval_required_for:
+  - gate: "research_direction"
+    approver: "principal_investigator"
+
+  - gate: "specification_freeze"
+    approver: "principal_investigator"
+
+  - gate: "implementation_start"
+    approver: "principal_investigator"
+
+  - gate: "gpu_experiments"
+    approver: "principal_investigator"

@@ -9,7 +9,6 @@
 |------|-----|---------|------|----------|
 | README.md | 207 | Project docs | MEDIUM — `cd gauge-sensitive-inverse-generation` at L49 | VERIFIED |
 | MATH_NOTES.md | 70 | 4 propositions | HIGH — Prop 4 false, Prop 1 misleading | VERIFIED |
-| AGENTS.md | 30 | Codex guidance | LOW — `fgr/` at L18 | VERIFIED — file exists at c6cc096 |
 | .env.example | 13 | Env template | LOW | VERIFIED |
 | .gitignore | 44 | Git rules | MEDIUM — `h5` is too narrow (matches file `h5`, not `*.h5`); `checkpoint*` is oddly placed | VERIFIED |
 | pyproject.toml | 31 | Package metadata | LOW — no PyYAML dependency for YAML config plan | VERIFIED |
@@ -123,24 +122,36 @@
 
 | H-064 | Import-time env enforcement for both datasets | **VERIFIED** | 1.00 | src/train.py:L30-33 — DATASET_PATHS dict evaluated at import |
 | H-065 | TrainConfig fields unused | **VERIFIED** | 0.95 | src/config.py:L26-40 — TrainConfig never instantiated in train.py |
-| H-066 | mixed_precision dtype mismatch | **REFUTED** | 0.80 | src/train.py:L165 — `torch.amp.autocast("cuda")` uses default (fp16), TrainConfig.mixed_precision="bf16" never used |
+| H-066 | mixed_precision dtype mismatch | **PARTIALLY_VERIFIED** | 0.80 | Mismatch exists but reason differs from original claim: src/train.py:L165 uses `torch.amp.autocast("cuda")` with default dtype (fp16), while TrainConfig.mixed_precision="bf16" is declared but never applied. The default autocast dtype does not match the configured one. |
 | H-067 | Checkpoint inside log_every nesting | **VERIFIED** | 1.00 | src/train.py:L201 — nested inside `if (step+1) % args.log_every == 0` |
 | H-068 | Checkpoint lacks optimizer/scheduler/RNG | **VERIFIED** | 1.00 | src/train.py:L204-205 — only model/EMA state_dict |
 | H-069 | No resume training | **VERIFIED** | 1.00 | No --resume flag or state restoration |
 | H-070 | Smoke tests only, no semantic checks | **VERIFIED** | 1.00 | tests/ only check shapes and param counts |
 | H-071 | Dataset tests skip → "all pass" misleading | **VERIFIED** | 0.95 | tests/test_fgr_dataset.py:L6 — `@requires_dsprites` skip marker |
 | H-072 | README stale: repo path, config | **VERIFIED** | 1.00 | L49 — `cd gauge-sensitive-inverse-generation` |
-| H-073 | .gitignore vs output dir mismatch | **UNVERIFIED** | 0.40 | output dir is `FGR_OUTPUT_DIR` (default `output/`); .gitignore has `outputs/` (with 's') |
+| H-073 | .gitignore vs output dir mismatch | **VERIFIED** | 0.95 | .gitignore has `outputs/` (plural), default output is `output/` (singular). Verified mismatch at c6cc096. |
 | H-074 | Generic `src` package name | **VERIFIED** | 0.70 | `src` is non-descriptive but functional; `pyproject.toml` uses `factor-gated-routing` as project name |
 | H-075 | No environment lock / seed manifest / data hash | **VERIFIED** | 1.00 | None of these exist |
 
 ### New defects (H-076 through H-085 from v1 audit)
 
-All H-076 through H-085 confirmed VERIFIED with confidence ≥ 0.95.
+| ID | Hypothesis | Status | Confidence | Evidence |
+|----|-----------|--------|------------|----------|
+| H-076 | README L49 instructs `cd gauge-sensitive-inverse-generation` — stale repo name | **VERIFIED** | 1.00 | README.md L49 at c6cc096 |
+| H-077 | `build_config` hardcodes `use_gating = (model_name == "FGR")` — baselines can never use gating | **VERIFIED** | 1.00 | src/train.py:L166-168 |
+| H-078 | FGRStream stores `factor_idx` but no validation that stream order = factor order | **VERIFIED** | 0.95 | src/model.py FGRStream.__init__ |
+| H-079 | `FGRDiT.factor_names` set to `config.factor_sizes` — naming bug | **VERIFIED** | 0.95 | src/model.py:L79 |
+| H-080 | evaluate.py uses `torch.randint(0, S_i, ...)` — ~1/S_i chance new_val == old_val | **VERIFIED** | 1.00 | src/evaluate.py:L88-89 |
+| H-081 | evaluate.py raises RuntimeError on unexpected keys; full_ca/DAG checkpoints WILL have unexpected CrossAttnBlock keys | **VERIFIED** | 0.95 | src/evaluate.py:L57-62 |
+| H-082 | DiTBlock lacks residual gating (adalN-Zero alpha parameter) — confirmed vs Facebook DiT repo | **VERIFIED** | 1.00 | src/utils.py:L76-99 |
+| H-083 | `FGRConfig` and `TrainConfig` in config.py are NEVER instantiated by train.py or evaluate.py | **VERIFIED** | 1.00 | Full codebase grep |
+| H-084 | `CosineSchedule.get_alpha_bars` returns alpha_bars directly (not cumprod) — correct for cosine schedule | **VERIFIED** | 1.00 | src/diffusion.py:L13-14 |
+| H-085 | AGENTS.md L18 references `fgr/` package — should be `src/` | **PARTIALLY_VERIFIED** | 0.70 | AGENTS.md file now exists at HEAD but git show confirms it did NOT exist at c6cc096. The file content (fgr/ path reference) is real at HEAD, but the file itself was not present at the audited commit. |
 
 ## Counts
 
-- **VERIFIED**: 70
-- **REFUTED**: 1 (H-066 — mixed_precision dtype mismatch present but not as claimed)
-- **UNVERIFIED**: 4 (H-042, H-057, H-062, H-073)
-- **Total adjudicated**: 75+10 = 85 hypotheses
+- **VERIFIED**: 80 (71 from H-001–H-075 individual rows + 9 from H-076–H-084)
+- **PARTIALLY_VERIFIED**: 2 (H-066 — mixed_precision mismatch reason differs; H-085 — AGENTS.md not present at c6cc096 but exists at HEAD)
+- **UNVERIFIED**: 3 (H-042, H-057, H-062)
+- **REFUTED**: 0
+- **Total adjudicated**: 85 hypotheses
