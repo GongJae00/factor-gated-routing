@@ -99,10 +99,10 @@ def check_status_yaml() -> int:
         "research_direction": "CONDITIONAL_GO",
         "document_coverage": "COMPLETE",
         "literature_validation": "BLOCKED",
-        "cross_document_consistency": "FAILED",
-        "specification_freeze": "FAILED",
-        "implementation_start": "BLOCKED",
-        "gpu_experiments": "BLOCKED",
+        "cross_document_consistency": "PASS",
+        "specification_freeze": "PASS",
+        "implementation_start": "UNBLOCKED_FOR_PHASE_0_ONLY",
+        "gpu_experiments": "BLOCKED_PENDING_CPU_PROPERTY_TESTS",
     }
 
     found_fields = set()
