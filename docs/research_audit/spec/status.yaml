@@ -90,7 +90,7 @@ implementation_start_blockers:
     impact: "Code at c6cc096 uses old intervention names (path_ablation, do-like)"
     resolution: "Phase 0 task: rename to canonical names during implementation"
 
-gpu_experiments: "BLOCKED"
+gpu_experiments: "BLOCKED_PENDING_CPU_PROPERTY_TESTS"
 gpu_experiments_blockers:
   - name: "implementation_not_started"
     status: "BLOCKED"
