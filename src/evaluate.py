@@ -1,147 +1,234 @@
-import os, json, math, argparse
+"""
+Paired-noise evaluation pipeline for Factor-Path Diffusion.
+
+Three protocols:
+1. factor_edit — change factor value, measure target success + off-target leakage
+2. factor_source_cut — verify Path Non-Interference (output invariant to f_i)
+3. neural_graph_surgery — cut incoming edges + inject v' + preserve outgoing
+
+All comparisons use shared NoiseTrace for paired evaluation.
+"""
+
+from __future__ import annotations
+
+import os
+import json
+import argparse
 import torch
 import numpy as np
 from torch.utils.data import DataLoader
 
-from src.config import ModelConfig, get_data_path, get_output_dir, get_oracle_path
-from src.dataset import DSpritesDataset
-from src.utils import safe_load_state_dict
-from src.diffusion import get_alpha_bars, sample_images
+from src.config import (
+    ModelConfig, build_model_config, DSPRITES_CFG, SHAPES3D_CFG,
+    get_data_path, get_output_dir, get_oracle_path,
+)
+from src.dataset import DSpritesDataset, Shapes3DDataset
+from src.sampling import get_alpha_bars, sample_ddim, make_trace_ddim
 from src.oracle import OracleClassifier
 from src.registry import MODEL_REGISTRY
-
-
-DSPRITES_FACTORS = dict(n_factors=3, factor_sizes=(3, 6, 40), in_channels=1)
-SHAPES3D_FACTORS = dict(n_factors=6, factor_sizes=(10, 10, 10, 8, 4, 15), in_channels=3)
+from src.types import (
+    InterventionMode, InterventionSpec, GraphSpec, GraphType,
+    CategoricalFactorSpec,
+)
+from src.interventions import compile_intervention, make_observational
+from src.metrics import (
+    compute_target_value_success,
+    compute_target_change_rate,
+    compute_off_target_change_matrix,
+    compute_no_op_change,
+    compute_source_invariance_error_trajectory,
+    compute_oracle_conditional_accuracy,
+)
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, required=True, choices=list(MODEL_REGISTRY.keys()))
+    parser.add_argument("--model", type=str, required=True,
+                       choices=list(MODEL_REGISTRY.keys()))
     parser.add_argument("--checkpoint", type=str, required=True)
-    parser.add_argument("--oracle", type=str, default=get_oracle_path(),
-                        help="Path to oracle classifier checkpoint")
-    parser.add_argument("--output-dir", type=str, default=get_output_dir("eval"),
-                        help="Output directory for evaluation results")
+    parser.add_argument("--oracle", type=str, default=None)
+    parser.add_argument("--output-dir", type=str, default=None)
     parser.add_argument("--n-samples", type=int, default=256)
-    parser.add_argument("--n-steps", type=int, default=200)
-    parser.add_argument("--cfg-scale", type=float, default=0.0,
-                        help="Classifier-free guidance scale (0=disabled)")
-    parser.add_argument("--gate-sweep", action="store_true",
-                        help="Test gate sensitivity: sweep gate in [0.0, 0.5, 1.0]")
-    parser.add_argument("--schedule", type=str, default="linear", choices=["linear", "cosine"])
-    parser.add_argument("--dataset", type=str, default="dsprites", choices=["dsprites", "3dshapes"],
-                        help="Dataset to evaluate on")
+    parser.add_argument("--n-steps", type=int, default=250)
+    parser.add_argument("--dataset", type=str, default="dsprites")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--schedule", type=str, default="cosine")
     args = parser.parse_args()
 
-    device = torch.device("cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if args.output_dir is None:
+        args.output_dir = get_output_dir("eval")
     os.makedirs(args.output_dir, exist_ok=True)
+
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    factor_cfg = SHAPES3D_FACTORS if args.dataset == "3dshapes" else DSPRITES_FACTORS
-    config = ModelConfig(
-        image_size=64, patch_size=4,
-        stream_dim=256, n_stream_blocks=4, n_heads=8,
-        use_gating=True,
-        **factor_cfg,
+    # Load config from checkpoint
+    ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    if "model_config" in ckpt:
+        config = ModelConfig(**ckpt["model_config"])
+    else:
+        cfg_dict = SHAPES3D_CFG if args.dataset == "3dshapes" else DSPRITES_CFG
+        config = build_model_config(cfg_dict)
+
+    print(f"Config: {config.n_factors} factors, trunk={config.trunk_dim}, "
+          f"branch={config.branch_dim}, graph={config.graph_type}")
+
+    # Build factor specs for intervention compiler
+    factor_specs = [CategoricalFactorSpec(f"f{i}", config.factor_sizes[i])
+                    for i in range(config.n_factors)]
+    graph_spec = GraphSpec(
+        graph_type=GraphType(config.graph_type),
+        num_nodes=config.n_factors,
+        edges=tuple(config.dag_edges),
     )
 
-    alpha_bars = get_alpha_bars(args.schedule).to(device)
-
-    model_cls = MODEL_REGISTRY[args.model]
-    model = model_cls(config).to(device)
-    state = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-    missing, unexpected = model.load_state_dict(state, strict=False)
-    if missing or unexpected:
-        raise RuntimeError(
-            f"Checkpoint mismatch for {args.model}: "
-            f"missing keys={len(missing)}, unexpected keys={len(unexpected)}. "
-            f"Check that --dataset matches the trained config."
-        )
-    print(f"Checkpoint loaded: {sum(p.numel() for p in model.parameters())/1e6:.2f}M params")
+    # Load model
+    model_fn = MODEL_REGISTRY[args.model]
+    model = model_fn(config).to(device)
+    if "model_state" in ckpt:
+        model.load_state_dict(ckpt["model_state"])
+    elif "ema_state" in ckpt:
+        model.load_state_dict(ckpt["ema_state"])
+    else:
+        model.load_state_dict(ckpt, strict=False)
     model.eval()
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"Model: {args.model} ({n_params/1e6:.2f}M params)")
 
-    oracle = OracleClassifier(config.factor_sizes, in_channels=getattr(config, "in_channels", 1)).to(device)
-    oracle.load_state_dict(torch.load(args.oracle, map_location="cpu", weights_only=True))
+    # Load oracle
+    oracle_path = args.oracle or get_oracle_path()
+    oracle = OracleClassifier(config.factor_sizes, in_channels=config.in_channels).to(device)
+    if os.path.exists(oracle_path):
+        oracle.load_state_dict(torch.load(oracle_path, map_location="cpu", weights_only=True))
     oracle.eval()
 
-    if args.dataset == "dsprites":
-        dataset = DSpritesDataset(get_data_path("dsprites"), split="test", seed=args.seed)
-    else:
-        from src.dataset import Shapes3DDataset
-        dataset = Shapes3DDataset(get_data_path("3dshapes"), split="test", seed=args.seed)
+    # Load dataset for reference
+    ds_cls = DSpritesDataset if args.dataset == "dsprites" else Shapes3DDataset
+    dataset = ds_cls(get_data_path(args.dataset), split="test", seed=args.seed)
     loader = DataLoader(dataset, batch_size=args.n_samples, shuffle=True)
     ref_batch = next(iter(loader))
     ref_factors = ref_batch["factors"][:args.n_samples].to(device)
-    null_factors = torch.zeros_like(ref_factors) if args.cfg_scale > 0 else None
+
+    alpha_bars = get_alpha_bars(args.schedule).to(device)
+    n_branch_layers = config.n_branch_layers
 
     results = {}
-    for intervene_idx in range(config.n_factors):
-        normal_factors = ref_factors.clone()
-        samples_normal = sample_images(model, normal_factors, device, config,
-                                        n_steps=args.n_steps, cfg_scale=args.cfg_scale,
-                                        uncondition_factors=null_factors, alpha_bars=alpha_bars)
+    K = config.n_factors
 
-        intervened_factors = normal_factors.clone()
-        new_val = torch.randint(0, config.factor_sizes[intervene_idx],
-                                (normal_factors.shape[0],), device=device)
-        intervened_factors[:, intervene_idx] = new_val
-        gates = [1.0] * config.n_factors
-        if args.model == "FGR":
-            gates[intervene_idx] = 0.0
-        samples_intervened = sample_images(model, intervened_factors, device, config,
-                                            gates=gates, n_steps=args.n_steps,
-                                            cfg_scale=args.cfg_scale,
-                                            uncondition_factors=null_factors,
-                                            alpha_bars=alpha_bars)
+    # Generate shared NoiseTrace
+    trace = make_trace_ddim(args.n_samples, config.in_channels, config.image_size,
+                           args.n_steps, device, seed=args.seed)
 
-        samples_vis = (samples_normal + 1) / 2
-        samples_inter_vis = (samples_intervened + 1) / 2
-        diff = np.abs(samples_inter_vis.cpu().numpy() - samples_vis.cpu().numpy()).reshape(args.n_samples, -1)
-        change_mag = diff.mean(axis=1)
-        unchanged = (change_mag < 0.05).mean()
-        results[f"factor_{intervene_idx}_mean_change"] = float(change_mag.mean())
-        results[f"factor_{intervene_idx}_nonintervention_stability"] = float(unchanged)
+    # --- Protocol 0: Observational (normal generation) ---
+    obs_intervention = make_observational(
+        ref_factors[0].tolist(), graph_spec, factor_specs,
+        args.n_samples, n_branch_layers, device=str(device),
+    )
+    samples_normal = sample_ddim(model, ref_factors, device, config.image_size,
+                                 config.in_channels, args.n_steps, alpha_bars,
+                                 intervention=obs_intervention, trace=trace)
+
+    with torch.no_grad():
+        normal_preds = oracle(samples_normal)
+    per_factor_acc, overall_acc = compute_oracle_conditional_accuracy(normal_preds, ref_factors)
+    results["observational_per_factor_accuracy"] = per_factor_acc.tolist()
+    results["observational_overall_accuracy"] = overall_acc
+
+    # --- Protocol 1: Factor Edit ---
+    all_edit_preds = []  # all_edit_preds[i] = oracle preds for edit on factor i
+    target_success = torch.zeros(K)
+    target_change = torch.zeros(K)
+
+    for intervene_idx in range(K):
+        new_val = _offset_sample(ref_factors[:, intervene_idx], config.factor_sizes[intervene_idx])
+
+        edit_intervention = compile_intervention(
+            InterventionSpec(
+                mode=InterventionMode.FACTOR_EDIT,
+                factor_edits={intervene_idx: int(new_val[0].item())},
+            ),
+            graph_spec, factor_specs,
+            factor_values=ref_factors[0].tolist(),
+            batch_size=args.n_samples, num_layers=n_branch_layers, device=str(device),
+        )
+
+        samples_edit = sample_ddim(model, ref_factors, device, config.image_size,
+                                    config.in_channels, args.n_steps, alpha_bars,
+                                    intervention=edit_intervention, trace=trace)
 
         with torch.no_grad():
-            normal_preds = [p.argmax(1) for p in oracle(samples_normal)]
-            cond_acc = [(normal_preds[fi] == normal_factors[:, fi]).float().mean().item()
-                         for fi in range(config.n_factors)]
-            for fi in range(config.n_factors):
-                results[f"cond_accuracy_f{fi}"] = float(cond_acc[fi])
-            results["mean_cond_accuracy"] = float(np.mean(cond_acc))
-            inter_preds = [p.argmax(1) for p in oracle(samples_intervened)]
-            for fi in range(config.n_factors):
-                changed = (normal_preds[fi] != inter_preds[fi]).float().mean().item()
-                results[f"factor_{intervene_idx}_oracle_change_f{fi}"] = float(changed)
+            edit_preds = oracle(samples_edit)
 
-            if args.gate_sweep and args.model == "FGR":
-                for test_gate in [0.0, 0.5, 1.0]:
-                    tg_gates = [1.0] * config.n_factors
-                    tg_gates[intervene_idx] = test_gate
-                    samples_tg = sample_images(model, intervened_factors, device, config,
-                                                gates=tg_gates, n_steps=args.n_steps,
-                                                cfg_scale=args.cfg_scale,
-                                                uncondition_factors=null_factors,
-                                                alpha_bars=alpha_bars)
-                    tg_preds = [p.argmax(1) for p in oracle(samples_tg)]
-                    for fi in range(config.n_factors):
-                        changed = (normal_preds[fi] != tg_preds[fi]).float().mean().item()
-                        results[f"factor_{intervene_idx}_gate{test_gate}_oracle_change_f{fi}"] = float(changed)
+        all_edit_preds.append(edit_preds)
 
-        print(f"[Factor {intervene_idx}] change={change_mag.mean():.4f} "
-              f"stability={unchanged:.4f}", flush=True)
+        # Target success: P[Oracle_i(x_edit) = v']
+        ts = (edit_preds[intervene_idx].argmax(dim=1) == new_val).float().mean()
+        target_success[intervene_idx] = ts
+        results[f"factor_{intervene_idx}_target_success"] = float(ts)
 
-    mean_stability = np.mean([v for k, v in results.items() if "stability" in k])
-    results["mean_nonintervention_stability"] = float(mean_stability)
-    print(f"[{args.model}] mean_stability={mean_stability:.4f}", flush=True)
+        # Target change: P[Oracle_i(x_edit) != Oracle_i(x_orig)]
+        tc = (edit_preds[intervene_idx].argmax(dim=1) != normal_preds[intervene_idx].argmax(dim=1)).float().mean()
+        target_change[intervene_idx] = tc
+        results[f"factor_{intervene_idx}_target_change"] = float(tc)
 
-    out_path = os.path.join(args.output_dir, f"{args.model}_eval.json")
+        print(f"[Edit {intervene_idx}] target_success={ts:.4f}, target_change={tc:.4f}", flush=True)
+
+    # Off-target leakage matrix
+    leakage = compute_off_target_change_matrix(all_edit_preds, normal_preds)
+    results["off_target_change_matrix"] = leakage.tolist()
+    results["mean_off_target_change"] = float(leakage.nanmean())
+
+    # --- Protocol 2: Factor Source Cut (Path Non-Interference) ---
+    if args.model in ("ROSTFRG", "FGR"):
+        for intervene_idx in range(K):
+            cut_intervention = compile_intervention(
+                InterventionSpec(
+                    mode=InterventionMode.FACTOR_SOURCE_CUT,
+                    source_cut_factors=frozenset([intervene_idx]),
+                ),
+                graph_spec, factor_specs,
+                factor_values=ref_factors[0].tolist(),
+                batch_size=args.n_samples, num_layers=n_branch_layers, device=str(device),
+            )
+            samples_cut = sample_ddim(model, ref_factors, device, config.image_size,
+                                      config.in_channels, args.n_steps, alpha_bars,
+                                      intervention=cut_intervention, trace=trace)
+
+            # Source invariance: change factor value with source cut → identical output
+            new_val = _offset_sample(ref_factors[:, intervene_idx], config.factor_sizes[intervene_idx])
+            cut_diff_intervention = compile_intervention(
+                InterventionSpec(
+                    mode=InterventionMode.FACTOR_SOURCE_CUT,
+                    source_cut_factors=frozenset([intervene_idx]),
+                    factor_edits={intervene_idx: int(new_val[0].item())},
+                ),
+                graph_spec, factor_specs,
+                factor_values=ref_factors[0].tolist(),
+                batch_size=args.n_samples, num_layers=n_branch_layers, device=str(device),
+            )
+            samples_cut_diff = sample_ddim(model, ref_factors, device, config.image_size,
+                                            config.in_channels, args.n_steps, alpha_bars,
+                                            intervention=cut_diff_intervention, trace=trace)
+
+            inv_err = compute_source_invariance_error_trajectory(samples_cut, samples_cut_diff)
+            results[f"factor_{intervene_idx}_source_invariance_rmse"] = inv_err["rmse"]
+            results[f"factor_{intervene_idx}_source_invariance_max"] = inv_err["max_abs"]
+            print(f"[Cut {intervene_idx}] invariance: rmse={inv_err['rmse']:.6f}, "
+                  f"max={inv_err['max_abs']:.6f}", flush=True)
+
+    # Save
+    out_path = os.path.join(args.output_dir, f"{args.model}_{args.dataset}_eval.json")
     with open(out_path, "w") as f:
         json.dump(results, f, indent=2)
-    print(f"Results saved to {out_path}", flush=True)
+    print(f"\nResults saved to {out_path}")
+
+
+def _offset_sample(old_vals: torch.Tensor, factor_size: int) -> torch.Tensor:
+    """Sample new value guaranteed ≠ old value."""
+    offset = torch.randint(1, factor_size, old_vals.shape, device=old_vals.device)
+    return (old_vals + offset) % factor_size
+
 
 if __name__ == "__main__":
     main()

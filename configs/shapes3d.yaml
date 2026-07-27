@@ -5,10 +5,13 @@ in_channels: 3
 n_factors: 6
 factor_sizes: [10, 10, 10, 8, 4, 15]
 factor_names: ["floor_hue", "wall_hue", "object_hue", "scale", "shape", "orientation"]
-stream_dim: 256
-n_stream_blocks: 4
+trunk_dim: 512
+branch_dim: 256
+n_trunk_blocks: 24
+n_branch_layers: 6
 n_heads: 8
-stream_aggregation: sum
-use_cross_attn: false
-dag_edges: []  # independent factors (3DShapes source)
+graph_type: independent
+dag_edges: []
+use_base: true
 use_gating: true
+schedule: cosine

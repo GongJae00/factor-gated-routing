@@ -4,8 +4,9 @@ cd "$(dirname "$0")/.."
 
 export FGR_OUTPUT_DIR="${FGR_OUTPUT_DIR:-output}"
 export DSPRITES_PATH="${DSPRITES_PATH:-/tmp/dsprites/dsprites.npz}"
+export SHAPES3D_PATH="${SHAPES3D_PATH:-/tmp/3dshapes/3dshapes.h5}"
 
-MODELS=("FGR" "SDiT" "EncDiff" "MMDiT-k" "CoInD" "CF-DiT")
+MODELS=("ROSTFRG" "CanonicalDiT" "IndependentStreamDiT" "CrossAttnDiT" "CFDiT")
 DATASET="${1:-dsprites}"
 STEPS="${2:-400000}"
 SEED="${3:-42}"

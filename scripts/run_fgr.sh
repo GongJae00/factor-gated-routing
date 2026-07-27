@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 export FGR_OUTPUT_DIR="${FGR_OUTPUT_DIR:-output}"
 export DSPRITES_PATH="${DSPRITES_PATH:-/tmp/dsprites/dsprites.npz}"
 
-MODEL="${1:-FGR}"
+MODEL="${1:-ROSTFRG}"
 DATASET="${2:-dsprites}"
 STEPS="${3:-400000}"
 SEED="${4:-42}"
