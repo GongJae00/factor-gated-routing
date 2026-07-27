@@ -1,135 +1,383 @@
+"""
+ROST-FRG: Read-Only Shared Trunk + Factor Residual Graph.
+
+Primary architecture for Factor-Path Diffusion (spec v3.0).
+
+Shared factor-agnostic DiT trunk processes x_t. Factor-specific adapter
+branches read trunk outputs (read-only, no write-back). Inter-branch
+communication via explicit graph edge messages. Per-branch output heads
+with additive aggregation in noise space.
+
+All 8 canonical intervention modes supported via CompiledIntervention.
+"""
+
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from typing import Optional, Sequence, Union
 
-from src.utils import timestep_embedding, PatchEmbed, FactorEmbed, DiTBlock, CrossAttnBlock
-from src.baselines import unpatchify
+from src.types import (
+    InterventionMode,
+    InterventionSpec,
+    GraphSpec,
+    GraphType,
+    FactorSpec,
+    CategoricalFactorSpec,
+    CompiledIntervention,
+)
+from src.graph import build_graph_spec, validate_graph
+from src.interventions import compile_intervention
+from src.utils import timestep_embedding, PatchEmbed
 
 
-class FGRStream(nn.Module):
-    def __init__(self, dim: int, n_blocks: int, n_heads: int,
-                 factor_idx: int, factor_size: int,
-                 use_cross_attn: bool = False):
+class AdaLNZero(nn.Module):
+    """adaLN-Zero modulation block. Cond should be [B, D] (flat, not expanded)."""
+    def __init__(self, dim: int):
         super().__init__()
-        self.factor_idx = factor_idx
-        self.factor_embed = nn.Embedding(factor_size, dim)
-        self.use_cross_attn = use_cross_attn
-        block_cls = CrossAttnBlock if use_cross_attn else DiTBlock
-        self.blocks = nn.ModuleList([
-            block_cls(dim, n_heads) for _ in range(n_blocks)
-        ])
+        self.norm = nn.LayerNorm(dim, elementwise_affine=False)
+        self.linear = nn.Linear(dim, dim * 3)
 
-    def forward(self, tokens, t_emb, factor_class, parent_states=None, gate=1.0):
-        f_emb = self.factor_embed(factor_class[:, self.factor_idx])
-        cond = t_emb + f_emb
-        x = tokens + f_emb.unsqueeze(1)
-        for block in self.blocks:
-            if isinstance(block, CrossAttnBlock):
-                x = block(x, cond, parent_states)
-            else:
-                x = block(x, cond)
-        x = x * gate
-        return x
-
-    def set_inter_stream_ca(self, enabled: bool):
-        if self.use_cross_attn and not enabled:
-            for i, block in enumerate(self.blocks):
-                if isinstance(block, CrossAttnBlock):
-                    new_block = DiTBlock(block.dim, block.n_heads).to(
-                        next(block.parameters()).device)
-                    self.blocks[i] = new_block
-        elif not self.use_cross_attn and enabled:
-            for i, block in enumerate(self.blocks):
-                if not isinstance(block, CrossAttnBlock):
-                    new_block = CrossAttnBlock(block.dim, block.n_heads).to(
-                        next(block.parameters()).device)
-                    self.blocks[i] = new_block
+    def forward(self, x, cond):
+        params = self.linear(cond).unsqueeze(1)
+        shift, scale, gate = params.chunk(3, dim=-1)
+        x = self.norm(x)
+        x = x * (1 + scale) + shift
+        return x, gate
 
 
-class FGRDiT(nn.Module):
-    def __init__(self, config):
+class AdaLN(nn.Module):
+    """Standard adaLN modulation (for branches). Cond can be [B, D] or [B, 1, D]."""
+    def __init__(self, dim: int):
         super().__init__()
-        self.cfg = config
-        dim = config.stream_dim
-        in_c = getattr(config, "in_channels", 1)
-        self.patch_embed = PatchEmbed(
-            in_channels=in_c, out_dim=dim,
-            patch_size=config.patch_size,
-            image_size=config.image_size,
-        )
-        n_tokens = (config.image_size // config.patch_size) ** 2
-        self.pos_embed = nn.Parameter(torch.randn(1, n_tokens, dim) * 0.02)
-        self.t_embed = nn.Sequential(
+        self.norm = nn.LayerNorm(dim, elementwise_affine=False)
+        self.linear = nn.Linear(dim, dim * 2)
+
+    def forward(self, x, cond):
+        params = self.linear(cond)
+        if params.dim() == 2:
+            params = params.unsqueeze(1)
+        scale, shift = params.chunk(2, dim=-1)
+        return self.norm(x) * (1 + scale) + shift
+
+
+class TrunkBlock(nn.Module):
+    """DiT block for shared trunk with adaLN-Zero."""
+    def __init__(self, dim: int, n_heads: int):
+        super().__init__()
+        self.dim = dim
+        self.n_heads = n_heads
+        self.norm1 = AdaLNZero(dim)
+        self.attn = nn.MultiheadAttention(dim, n_heads, batch_first=True)
+        self.norm2 = AdaLNZero(dim)
+        self.mlp = nn.Sequential(
             nn.Linear(dim, dim * 4),
-            nn.SiLU(),
+            nn.GELU(),
             nn.Linear(dim * 4, dim),
         )
 
-        self.streams = nn.ModuleList([
-            FGRStream(
-                dim=dim,
-                n_blocks=config.n_stream_blocks,
-                n_heads=config.n_heads,
-                factor_idx=i,
-                factor_size=config.factor_sizes[i],
-                use_cross_attn=config.use_cross_attn,
-            ) for i in range(config.n_factors)
-        ])
+    def forward(self, x, t_emb):
+        h, gate1 = self.norm1(x, t_emb)
+        h = self.attn(h, h, h, need_weights=False)[0]
+        x = x + gate1 * h
 
-        self.n_factors = config.n_factors
-        self.factor_names = config.factor_sizes
-        self.use_gating = config.use_gating
-        self._ca_mode = "dag"
+        h, gate2 = self.norm2(x, t_emb)
+        h = self.mlp(h)
+        x = x + gate2 * h
+        return x
 
-        out_dim = config.patch_size * config.patch_size * in_c
-        self.output_head = nn.Sequential(
-            nn.LayerNorm(dim),
-            nn.Linear(dim, out_dim),
+
+class EdgeMessage(nn.Module):
+    """Shared edge message module per layer. Conditioned on (parent,child) edge key."""
+    def __init__(self, dim: int, num_factors: int):
+        super().__init__()
+        self.edge_key_embed = nn.Embedding(num_factors * num_factors, dim)
+        self.proj = nn.Sequential(
+            nn.Linear(dim * 2, dim),
+            nn.GELU(),
+            nn.Linear(dim, dim),
         )
 
-    def set_inter_stream_ca(self, enabled: bool):
-        for stream in self.streams:
-            stream.set_inter_stream_ca(enabled)
+    def forward(self, parent_state: torch.Tensor, parent_idx: int, child_idx: int, num_factors: int) -> torch.Tensor:
+        key = parent_idx * num_factors + child_idx
+        key_emb = self.edge_key_embed(torch.tensor(key, device=parent_state.device))
+        key_emb = key_emb.unsqueeze(0).unsqueeze(0).expand(parent_state.shape[0], parent_state.shape[1], -1)
+        return self.proj(torch.cat([parent_state, key_emb], dim=-1))
 
-    def set_ca_mode(self, mode: str = "dag"):
-        if mode == "full":
-            self._ca_mode = "full"
-        elif mode == "dag":
-            self._ca_mode = "dag"
+
+class FactorInit(nn.Module):
+    """Initialize branch state from trunk z^(0) + factor encoding."""
+    def __init__(self, trunk_dim: int, branch_dim: int, factor_size: int):
+        super().__init__()
+        self.factor_embed = nn.Embedding(factor_size + 1, branch_dim)  # +1 for null
+        self.proj = nn.Linear(trunk_dim, branch_dim)
+        self.t_proj = nn.Sequential(
+            nn.Linear(branch_dim, branch_dim * 2),
+            nn.SiLU(),
+            nn.Linear(branch_dim * 2, branch_dim),
+        )
+
+    def forward(self, trunk_z0: torch.Tensor, factor_class: torch.Tensor, factor_idx: int, t_emb: torch.Tensor) -> torch.Tensor:
+        f_emb = self.factor_embed(factor_class[:, factor_idx])
+        trunk_info = self.proj(trunk_z0)
+        t_info = self.t_proj(t_emb).unsqueeze(1)
+        return trunk_info + f_emb.unsqueeze(1) + t_info
+
+
+class FactorAdapter(nn.Module):
+    """Per-factor branch adapter at one trunk layer."""
+    def __init__(self, trunk_dim: int, branch_dim: int, n_heads: int, factor_size: int):
+        super().__init__()
+        self.factor_embed = nn.Embedding(factor_size + 1, branch_dim)
+        self.trunk_read = nn.Sequential(
+            nn.Linear(trunk_dim, branch_dim),
+            nn.GELU(),
+        )
+        self.self_attn = nn.MultiheadAttention(branch_dim, n_heads, batch_first=True)
+        self.norm_self = AdaLN(branch_dim)
+        self.norm_parent = nn.LayerNorm(branch_dim)
+        self.parent_proj = nn.Linear(branch_dim, branch_dim)
+        self.norm_ff = AdaLN(branch_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(branch_dim, branch_dim * 4),
+            nn.GELU(),
+            nn.Linear(branch_dim * 4, branch_dim),
+        )
+
+    def forward(
+        self,
+        branch_state: torch.Tensor,
+        trunk_read: torch.Tensor,
+        factor_class: torch.Tensor,
+        factor_idx: int,
+        t_emb: torch.Tensor,
+        parent_aggregate: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        f_emb = self.factor_embed(factor_class[:, factor_idx])
+        cond = t_emb + f_emb
+
+        trunk_info = self.trunk_read(trunk_read)
+        h = branch_state + trunk_info
+
+        h = self.norm_self(h, cond)
+        h = self.self_attn(h, h, h, need_weights=False)[0]
+
+        if parent_aggregate is not None:
+            parent_info = self.parent_proj(self.norm_parent(parent_aggregate))
+            h = h + parent_info
+
+        h = self.norm_ff(h, cond)
+        h = h + self.mlp(h)
+
+        return h
+
+
+class FactorHead(nn.Module):
+    """Per-factor output head: Norm_i → P_i → noise contribution."""
+    def __init__(self, branch_dim: int, out_dim: int):
+        super().__init__()
+        self.norm = nn.LayerNorm(branch_dim)
+        self.proj = nn.Linear(branch_dim, out_dim)
+
+        # Zero initialization
+        nn.init.zeros_(self.proj.weight)
+        nn.init.zeros_(self.proj.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.proj(self.norm(x))
+
+
+class ROSTFRG(nn.Module):
+    """Read-Only Shared Trunk + Factor Residual Graph.
+
+    Primary architecture for Factor-Path Diffusion.
+    """
+
+    def __init__(
+        self,
+        image_size: int = 64,
+        patch_size: int = 4,
+        in_channels: int = 1,
+        n_factors: int = 3,
+        factor_sizes: tuple[int, ...] = (3, 6, 40),
+        trunk_dim: int = 512,
+        branch_dim: int = 256,
+        n_trunk_blocks: int = 12,
+        n_branch_layers: int = 4,
+        n_heads: int = 8,
+        graph_type: GraphType | str = GraphType.INDEPENDENT,
+        dag_edges: Sequence[tuple[int, int]] | None = None,
+        use_base: bool = True,
+    ):
+        super().__init__()
+        self.image_size = image_size
+        self.patch_size = patch_size
+        self.in_channels = in_channels
+        self.n_factors = n_factors
+        self.factor_sizes = factor_sizes
+        self.trunk_dim = trunk_dim
+        self.branch_dim = branch_dim
+        self.n_trunk_blocks = n_trunk_blocks
+        self.n_branch_layers = n_branch_layers
+        self.n_heads = n_heads
+        self.use_base = use_base
+
+        # Graph
+        if isinstance(graph_type, str):
+            graph_type = GraphType(graph_type)
+        self.graph_spec = build_graph_spec(graph_type, n_factors, list(dag_edges) if dag_edges else None)
+
+        out_dim = patch_size * patch_size * in_channels
+        n_patches = (image_size // patch_size) ** 2
+
+        # Shared trunk
+        self.patch_embed = PatchEmbed(in_channels, trunk_dim, patch_size, image_size)
+        self.pos_embed = nn.Parameter(torch.randn(1, n_patches, trunk_dim) * 0.02)
+        self.t_embed = nn.Sequential(
+            nn.Linear(trunk_dim, trunk_dim * 4),
+            nn.SiLU(),
+            nn.Linear(trunk_dim * 4, trunk_dim),
+        )
+        self.branch_t_embed = nn.Sequential(
+            nn.Linear(trunk_dim, branch_dim * 2),
+            nn.SiLU(),
+            nn.Linear(branch_dim * 2, branch_dim),
+        )
+        self.trunk_blocks = nn.ModuleList([
+            TrunkBlock(trunk_dim, n_heads) for _ in range(n_trunk_blocks)
+        ])
+
+        # Factor branches
+        self.factor_inits = nn.ModuleList([
+            FactorInit(trunk_dim, branch_dim, factor_sizes[i])
+            for i in range(n_factors)
+        ])
+
+        branch_layers_per = max(1, n_branch_layers // max(1, n_trunk_blocks))
+        self.branch_layers = nn.ModuleList([
+            nn.ModuleList([
+                FactorAdapter(trunk_dim, branch_dim, n_heads, factor_sizes[i])
+                for i in range(n_factors)
+            ])
+            for _ in range(n_branch_layers)
+        ])
+
+        # Edge messages
+        self.edge_messages = nn.ModuleList([
+            EdgeMessage(branch_dim, n_factors)
+            for _ in range(n_branch_layers)
+        ])
+
+        # Output heads
+        if use_base:
+            self.base_head = nn.Sequential(
+                nn.LayerNorm(trunk_dim),
+                nn.Linear(trunk_dim, out_dim),
+            )
         else:
-            raise ValueError(f"Unknown ca_mode: {mode}")
+            self.base_head = None
 
-    def forward(self, x_t, t, factor_classes, gates=None):
+        self.factor_heads = nn.ModuleList([
+            FactorHead(branch_dim, out_dim) for _ in range(n_factors)
+        ])
+
+    def forward(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        factor_classes: torch.Tensor,
+        intervention: Optional[CompiledIntervention] = None,
+    ) -> torch.Tensor:
         B = x_t.shape[0]
-        t_emb = timestep_embedding(t, self.cfg.stream_dim)
-        t_emb = self.t_embed(t_emb)
-        tokens = self.patch_embed(x_t)
-        tokens = tokens + self.pos_embed
+        device = x_t.device
 
-        if gates is None:
-            gates = [1.0] * self.n_factors
+        # Timestep embedding
+        t_emb = timestep_embedding(t, self.trunk_dim)
+        t_emb_flat = self.t_embed(t_emb)  # [B, trunk_dim]
+        t_branch = self.branch_t_embed(t_emb)  # [B, branch_dim]
 
-        dag = self.cfg.dag_edges
-        ca_mode = getattr(self, "_ca_mode", "dag")
-        stream_outputs = []
-        for i, stream in enumerate(self.streams):
-            parent_states = None
-            if ca_mode == "full" and i > 0:
-                parent_states = list(stream_outputs)
-            elif dag:
-                parent_indices = [e[0] for e in dag if e[1] == i]
-                if parent_indices:
-                    parent_states = [stream_outputs[pi] for pi in parent_indices if pi < len(stream_outputs)]
-                    parent_states = parent_states or None
-            gate_val = gates[i] if self.use_gating else 1.0
-            so = stream(tokens, t_emb, factor_classes, parent_states, gate_val)
-            stream_outputs.append(so)
+        # Patch embed
+        z = self.patch_embed(x_t) + self.pos_embed
 
-        if self.cfg.stream_aggregation == "sum":
-            out = sum(stream_outputs)
-        elif self.cfg.stream_aggregation == "mean":
-            out = sum(stream_outputs) / self.n_factors
-        else:
-            raise ValueError(f"Unknown aggregation: {self.cfg.stream_aggregation}")
+        # Extract gates from intervention
+        src_gate = intervention.source_gate.to(device) if intervention is not None else torch.ones(B, self.n_factors, device=device)
+        node_gate = intervention.node_gate.to(device) if intervention is not None else torch.ones(B, self.n_factors, device=device)
+        out_gate = intervention.output_gate.to(device) if intervention is not None else torch.ones(B, self.n_factors, device=device)
+        edge_gate_all = intervention.edge_gate.to(device) if intervention is not None else torch.ones(B, self.n_branch_layers, self.n_factors, self.n_factors, device=device)
 
-        out = self.output_head(out)
-        return unpatchify(out, self.cfg.patch_size)
+        # Trunk forward
+        z0_for_branch = z
+        trunk_outputs = [z0_for_branch]
+        for l, block in enumerate(self.trunk_blocks):
+            z = block(z, t_emb_flat)
+            trunk_outputs.append(z)
+
+        # Initialize branch states
+        branch_states: list[torch.Tensor] = []
+        for i in range(self.n_factors):
+            a = self.factor_inits[i](z0_for_branch, factor_classes, i, t_branch)
+            branch_states.append(a)
+
+        # Branch layers (synchronous)
+        trunk_stride = max(1, self.n_trunk_blocks // max(1, self.n_branch_layers))
+        for l in range(self.n_branch_layers):
+            trunk_layer_out = trunk_outputs[min((l + 1) * trunk_stride, self.n_trunk_blocks)]
+
+            # Compute edge messages from snapshot
+            edge_msgs: dict[tuple[int, int], torch.Tensor] = {}
+            for u, v in self.graph_spec.edges:
+                if edge_gate_all[0, l, u, v] > 0:
+                    msg = self.edge_messages[l](branch_states[u], u, v, self.n_factors)
+                    edge_msgs[(u, v)] = msg * edge_gate_all[:, l, u, v].view(B, 1, 1)
+
+            # Aggregate parent messages per child
+            parent_agg: dict[int, torch.Tensor] = {}
+            for v in range(self.n_factors):
+                parents = []
+                for u, child in self.graph_spec.edges:
+                    if child == v and (u, v) in edge_msgs:
+                        parents.append(edge_msgs[(u, v)])
+                if parents:
+                    parent_agg[v] = torch.stack(parents).mean(0)
+
+            # Update all branches (synchronous from snapshot)
+            new_states = []
+            for i in range(self.n_factors):
+                if node_gate[0, i] < 0.5:
+                    new_states.append(branch_states[i])
+                    continue
+                a = self.branch_layers[l][i](
+                    branch_states[i],
+                    trunk_layer_out,
+                    factor_classes,
+                    i,
+                    t_branch,
+                    parent_agg.get(i),
+                )
+                new_states.append(a)
+            branch_states = new_states
+
+        # Output heads
+        epsilon: torch.Tensor | float = 0.0
+        if self.base_head is not None:
+            epsilon = self.base_head(z)  # type: ignore[assignment]
+
+        for i in range(self.n_factors):
+            if out_gate[0, i] > 0:
+                eps_i = self.factor_heads[i](branch_states[i])
+                gate_val = out_gate[:, i].view(B, 1, 1)
+                if isinstance(epsilon, float):
+                    epsilon = gate_val * eps_i
+                else:
+                    epsilon = epsilon + gate_val * eps_i  # type: ignore[operator]
+
+        # Unpatchify
+        return unpatchify(epsilon, self.patch_size)
+
+
+def unpatchify(x: torch.Tensor, patch_size: int) -> torch.Tensor:
+    B, N, D = x.shape
+    H = W = int(N ** 0.5)
+    x = x.permute(0, 2, 1).reshape(B, D, H, W)
+    return F.pixel_shuffle(x, patch_size)
